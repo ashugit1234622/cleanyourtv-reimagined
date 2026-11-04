@@ -2288,24 +2288,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private String readStatsLine() {
-        int cpu = cpuPercent();
-        if (cpu < 0) {
-            try {
-                Thread.sleep(200);             // second sample, so the first line already has a CPU figure
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return "";
-            }
-            cpu = cpuPercent();
-        }
-        // Android 8 and later hide /proc/stat from apps on many TVs: then the line leaves CPU out rather than
-        // showing a dash that never fills in.
         StringBuilder line = new StringBuilder();
-        if (cpu >= 0) line.append(getString(R.string.stats_cpu, cpu));
         long[] mem = memUsedOfTotalMb();
-        if (mem != null) appendStat(line, getString(R.string.stats_memory, mem[0], mem[1]));
-        String free = formatGb(getResources(), Environment.getDataDirectory().getFreeSpace());
-        if (!free.isEmpty()) appendStat(line, getString(R.string.stats_storage, free));
+        if (mem != null && mem[1] > 0) {
+            int ramPercent = (int) Math.round((mem[0] * 100.0) / mem[1]);
+            appendStat(line, "RAM " + ramPercent + "%");
+        }
+        File dataDir = Environment.getDataDirectory();
+        long totalBytes = dataDir.getTotalSpace();
+        long freeBytes = dataDir.getFreeSpace();
+        if (totalBytes > 0) {
+            int storagePercent = (int) Math.round(((totalBytes - freeBytes) * 100.0) / totalBytes);
+            appendStat(line, "Storage " + storagePercent + "%");
+        }
         return StatsText.forLocale(line.toString(), getResources().getConfiguration().getLocales().get(0));
     }
 
