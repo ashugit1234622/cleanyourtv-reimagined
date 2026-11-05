@@ -27,6 +27,21 @@ import java.util.Set;
  */
 public final class QuickSettingsActivity extends Activity {
     private static final String CACHE_PREFS = "quick_settings_cache";
+    private static ClassLoader sMitvClassLoader;
+
+    private ClassLoader getMitvClassLoader() {
+        if (sMitvClassLoader == null) {
+            try {
+                sMitvClassLoader = new dalvik.system.PathClassLoader(
+                        "/system/framework/mitvmiddlewareimpl.jar:/vendor/framework/com.mitv.mtvapiclientwrapper.jar",
+                        getClassLoader()
+                );
+            } catch (Throwable t) {
+                sMitvClassLoader = getClassLoader();
+            }
+        }
+        return sMitvClassLoader;
+    }
 
     @Override
     protected void attachBaseContext(android.content.Context base) {
@@ -139,26 +154,49 @@ public final class QuickSettingsActivity extends Activity {
         SharedPreferences cache = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE);
         int mode = -1;
         try {
-            Class<?> pmClass = Class.forName("mitv.display.PictureSettingsManager");
-            Method getInstance = pmClass.getMethod("getInstance");
-            Object pm = getInstance.invoke(null);
-            if (pm != null) {
-                Method getPicMode = pm.getClass().getMethod("getPictureModeValue");
-                Object val = getPicMode.invoke(pm);
-                if (val instanceof Number) {
-                    mode = ((Number) val).intValue();
-                }
-            }
+            mode = Settings.Global.getInt(getContentResolver(), "picture_mode");
         } catch (Throwable ignored) {
+            try {
+                mode = Settings.System.getInt(getContentResolver(), "picture_mode");
+            } catch (Throwable ignored2) {}
         }
         if (mode < 0) {
             try {
-                mode = Settings.Global.getInt(getContentResolver(), "picture_mode", 0);
-            } catch (Throwable ignored) {
+                Class<?> pmClass = null;
+                try {
+                    pmClass = Class.forName("mitv.display.PictureSettingsManager");
+                } catch (Throwable t) {
+                    try {
+                        pmClass = Class.forName("mitv.display.PictureSettingsManager", true, getMitvClassLoader());
+                    } catch (Throwable ignored) {}
+                }
+                if (pmClass != null) {
+                    Method getInstance = pmClass.getMethod("getInstance");
+                    Object pm = getInstance.invoke(null);
+                    if (pm != null) {
+                        Method getPicMode = null;
+                        try {
+                            getPicMode = pm.getClass().getMethod("getPictureModeValue");
+                        } catch (Throwable t) {
+                            try {
+                                getPicMode = pm.getClass().getMethod("getSceneMode");
+                            } catch (Throwable ignored) {}
+                        }
+                        if (getPicMode != null) {
+                            Object val = getPicMode.invoke(pm);
+                            if (val instanceof Number) {
+                                mode = ((Number) val).intValue();
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("QuickSettings", "PictureSettingsManager error", t);
             }
         }
         if (mode >= 0) {
             String title = mapPictureMode(mode);
+            android.util.Log.d("QuickSettings", "Detected active PictureMode: " + title + " (raw=" + mode + ")");
             cache.edit().putString("last_picture_mode", title).apply();
             return title;
         }
@@ -198,20 +236,47 @@ public final class QuickSettingsActivity extends Activity {
     private String getSoundModeOrDtsTitle() {
         SharedPreferences cache = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE);
         try {
-            Class<?> smClass = Class.forName("mitv.sound.SoundManager");
-            Method getInstance = smClass.getMethod("getInstance");
-            Object sm = getInstance.invoke(null);
+            Class<?> smClass = null;
+            try {
+                smClass = Class.forName("mitv.sound.SoundManager");
+            } catch (Throwable t) {
+                try {
+                    smClass = Class.forName("mitv.sound.SoundManager", true, getMitvClassLoader());
+                } catch (Throwable ignored) {}
+            }
+            Object sm = null;
+            if (smClass != null) {
+                try {
+                    Method getInstance = smClass.getMethod("getInstance");
+                    sm = getInstance.invoke(null);
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "SoundManager.getInstance error", t);
+                }
+            }
+            if (sm == null) {
+                try {
+                    Class<?> implClass = Class.forName("mitv.impl.sound.SoundManagerImpl", true, getMitvClassLoader());
+                    Method getInstance = implClass.getMethod("getInstance");
+                    sm = getInstance.invoke(null);
+                } catch (Throwable ignored) {}
+            }
+
             if (sm != null) {
+                android.util.Log.d("QuickSettings", "sm loaded successfully: " + sm.getClass().getName());
                 boolean dtsVxOn = false;
                 try {
                     Method getVx = sm.getClass().getMethod("getDtsVirtualX");
                     Object vxVal = getVx.invoke(sm);
+                    android.util.Log.d("QuickSettings", "raw getDtsVirtualX: " + vxVal);
                     if (vxVal instanceof Number) {
-                        dtsVxOn = ((Number) vxVal).intValue() == 4; // SOUND_DTS_STATUS_ON = 4
+                        int v = ((Number) vxVal).intValue();
+                        dtsVxOn = (v == 4 || v == 1);
                     } else if (vxVal instanceof Boolean) {
                         dtsVxOn = (Boolean) vxVal;
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "err getDtsVirtualX", t);
+                }
 
                 boolean bass = false;
                 boolean clarity = false;
@@ -220,25 +285,34 @@ public final class QuickSettingsActivity extends Activity {
                 try {
                     Method getBass = sm.getClass().getMethod("getDtsBassEnhancement");
                     Object bVal = getBass.invoke(sm);
+                    android.util.Log.d("QuickSettings", "raw getDtsBassEnhancement: " + bVal);
                     if (bVal instanceof Number) bass = ((Number) bVal).intValue() > 0;
                     else if (bVal instanceof Boolean) bass = (Boolean) bVal;
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "err getDtsBassEnhancement", t);
+                }
 
                 try {
                     Method getClarity = sm.getClass().getMethod("getDtsDialogClarity");
                     Object cVal = getClarity.invoke(sm);
+                    android.util.Log.d("QuickSettings", "raw getDtsDialogClarity: " + cVal);
                     if (cVal instanceof Number) clarity = ((Number) cVal).intValue() > 0;
                     else if (cVal instanceof Boolean) clarity = (Boolean) cVal;
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "err getDtsDialogClarity", t);
+                }
 
                 try {
                     Method getVirt = sm.getClass().getMethod("getDtsVirtualSurround");
                     Object vVal = getVirt.invoke(sm);
+                    android.util.Log.d("QuickSettings", "raw getDtsVirtualSurround: " + vVal);
                     if (vVal instanceof Number) virtualizer = ((Number) vVal).intValue() > 0;
                     else if (vVal instanceof Boolean) virtualizer = (Boolean) vVal;
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "err getDtsVirtualSurround", t);
+                }
 
-                if (dtsVxOn || bass || clarity || virtualizer) {
+                if (bass || clarity || virtualizer) {
                     String dtsTitle;
                     if (bass && clarity && virtualizer) {
                         dtsTitle = "DTS: Virtual:X";
@@ -252,32 +326,45 @@ public final class QuickSettingsActivity extends Activity {
                         dtsTitle = "DTS: Bass";
                     } else if (clarity) {
                         dtsTitle = "DTS: Clarity";
-                    } else if (virtualizer) {
-                        dtsTitle = "DTS: Virtualizer";
                     } else {
-                        dtsTitle = "DTS: Virtual:X";
+                        dtsTitle = "DTS: Virtualizer";
                     }
+                    android.util.Log.d("QuickSettings", "Detected active DTS: " + dtsTitle);
+                    cache.edit().putString("last_sound_mode", dtsTitle).apply();
+                    return dtsTitle;
+                } else if (dtsVxOn) {
+                    String dtsTitle = "DTS: Virtual:X";
+                    android.util.Log.d("QuickSettings", "Detected active DTS VirtualX: " + dtsTitle);
                     cache.edit().putString("last_sound_mode", dtsTitle).apply();
                     return dtsTitle;
                 }
 
+                // DTS is off: get active sound mode
                 int soundMode = 0;
                 try {
-                    Method getMode = sm.getClass().getMethod("getSoundEffectType");
+                    Method getMode = sm.getClass().getMethod("getSoundMode");
                     Object modeVal = getMode.invoke(sm);
+                    android.util.Log.d("QuickSettings", "raw getSoundMode: " + modeVal);
                     if (modeVal instanceof Number) soundMode = ((Number) modeVal).intValue();
-                } catch (Throwable ignored) {
+                } catch (Throwable t) {
+                    android.util.Log.w("QuickSettings", "err getSoundMode", t);
                     try {
-                        Method getMode = sm.getClass().getMethod("getSoundMode");
+                        Method getMode = sm.getClass().getMethod("getSoundModeHarman");
                         Object modeVal = getMode.invoke(sm);
+                        android.util.Log.d("QuickSettings", "raw getSoundModeHarman: " + modeVal);
                         if (modeVal instanceof Number) soundMode = ((Number) modeVal).intValue();
-                    } catch (Throwable ignored2) {}
+                    } catch (Throwable t2) {
+                        android.util.Log.w("QuickSettings", "err getSoundModeHarman", t2);
+                    }
                 }
                 String modeTitle = mapSoundMode(soundMode);
+                android.util.Log.d("QuickSettings", "Detected active SoundMode: " + modeTitle + " (raw=" + soundMode + ")");
                 cache.edit().putString("last_sound_mode", modeTitle).apply();
                 return modeTitle;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            android.util.Log.w("QuickSettings", "Error detecting sound mode", t);
+        }
 
         return cache.getString("last_sound_mode", "Standard");
     }
@@ -290,6 +377,7 @@ public final class QuickSettingsActivity extends Activity {
             case 3: return "Game";
             case 4: case 62603: return "Custom";
             case 5: return "Music";
+            case 6: return "Sport";
             default: return "Standard";
         }
     }
