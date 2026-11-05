@@ -51,7 +51,12 @@ final class ServiceRepair {
             for (String service : prefs(context).getAll().keySet()) {
                 recorded.add(new ComponentName(context.getPackageName(), service));
             }
-            if (recorded.isEmpty()) return;
+            // Always ensure HomeKeyService is recorded so remote key intercept survives reboots and standby
+            ComponentName homeKey = new ComponentName(context.getPackageName(), HomeKeyService.class.getName());
+            if (!recorded.contains(homeKey)) {
+                recorded.add(homeKey);
+                connected(context, HomeKeyService.class);
+            }
             // The list without our recorded helpers, then with all of them.
             StringBuilder others = new StringBuilder();
             for (ComponentName name : enabled) {
@@ -77,12 +82,15 @@ final class ServiceRepair {
             // that way instead of being overwritten by a snapshot.
             final String without = others.toString();
             final String with = updated.toString();
+            // Set immediately so HomeKeyService is bound with zero delay
+            Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, with);
+            Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1);
             new Thread(() -> {
                 try {
-                    if (!replaceList(cr, list, with)) return;
-                    Thread.sleep(1000);
+                    Thread.sleep(3000);
+                    if (HomeKeyService.canOpenPowerMenu()) return;
                     if (!replaceList(cr, with, without)) return;
-                    Thread.sleep(1000);
+                    Thread.sleep(500);
                     if (!replaceList(cr, without, with)) return;
                     Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1);
                 } catch (RuntimeException | InterruptedException ignored) {

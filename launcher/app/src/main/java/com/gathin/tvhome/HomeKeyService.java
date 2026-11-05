@@ -247,6 +247,7 @@ public class HomeKeyService extends AccessibilityService {
 
     private boolean isSettingsKey(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_SETTINGS) return true;
+        if (event.getKeyCode() == 285) return true;
         for (int code : settingsScancodes) if (event.getScanCode() == code) return true;
         for (int code : settingsKeycodes) if (event.getKeyCode() == code) return true;
         return false;
@@ -296,7 +297,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         RemoteKeys.release(this);
-        if (repairRecord && !steppingOut) ServiceRepair.disconnected(this, getClass());
+        // Do NOT drop repair record on unbind - standby and reboot trigger unbind.
         return super.onUnbind(intent);
     }
 
