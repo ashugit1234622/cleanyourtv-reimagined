@@ -58,7 +58,10 @@ public final class QuickSettingsActivity extends Activity {
             position.setMargins(inset, position.topMargin, 0, position.bottomMargin);
             panel.setLayoutParams(position);
         }
-        findViewById(R.id.scrim).setOnClickListener(v -> finish());
+        View scrim = findViewById(R.id.scrim);
+        scrim.setOnClickListener(v -> finish());
+        scrim.setFocusable(false);
+        scrim.setFocusableInTouchMode(false);
         buildRows();
     }
 
@@ -92,8 +95,12 @@ public final class QuickSettingsActivity extends Activity {
         addRow(rows, R.drawable.ic_home_settings, getString(R.string.launcher_settings),
                 new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));
 
-        if (rows.getChildCount() > 0 && getCurrentFocus() == null) {
-            rows.getChildAt(0).requestFocus();
+        if (rows.getChildCount() > 0) {
+            rows.post(() -> {
+                if (rows.getChildCount() > 0) {
+                    rows.getChildAt(0).requestFocus();
+                }
+            });
         }
     }
 
