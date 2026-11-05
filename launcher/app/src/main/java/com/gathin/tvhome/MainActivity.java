@@ -264,6 +264,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean singleRow;
     /** The highlight springs past its target (config.xml, focus_overshoot); false goes straight there. */
     private boolean focusOvershoot;
+    private BootIntroOverlay bootIntroOverlay;
     /** Festive skin from the theme (see Festival); applied while it is active today. */
     private Festival festival = Festival.NONE;
     private boolean festive;
@@ -993,6 +994,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent()) && !openLibraryIfAsked(getIntent())) {
             openInputsIfAsked(getIntent());
         }
+        if (savedInstanceState == null) {
+            checkAndTriggerBootIntro(getIntent());
+        }
+    }
+
+    private void checkAndTriggerBootIntro(Intent intent) {
+        boolean testBoot = intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false);
+        Config cfg = Config.load(this);
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        int lastBoot = prefs.getInt(BootIntro.KEY_LAST_BOOT, -1);
+        int currentBoot = Settings.Global.getInt(getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+
+        if (BootIntro.shouldPlay(currentBoot, lastBoot, cfg.bootIntro, cfg.reducedMotion, testBoot)) {
+            if (currentBoot >= 0 && currentBoot != lastBoot) {
+                prefs.edit().putInt(BootIntro.KEY_LAST_BOOT, currentBoot).apply();
+            }
+            triggerBootIntro();
+        }
+    }
+
+    private void triggerBootIntro() {
+        if (bootIntroOverlay != null) {
+            bootIntroOverlay.skip();
+        }
+        View homeContent = findViewById(R.id.homeContent);
+        if (homeContent == null || grid == null || root == null) return;
+
+        bootIntroOverlay = new BootIntroOverlay(this);
+        root.addView(bootIntroOverlay, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        bootIntroOverlay.start(homeContent, grid, () -> {
+            bootIntroOverlay = null;
+            restoreFocus();
+        });
     }
 
     /**
@@ -1075,6 +1111,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false)) {
+            triggerBootIntro();
+            return;
+        }
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openLibraryIfAsked(intent)) return;
@@ -1469,6 +1509,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) {
+            boolean revealing = bootIntroOverlay.isRevealing();
+            bootIntroOverlay.skip();
+            if (!revealing) return true;
+            return super.dispatchKeyEvent(event);
+        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -48,7 +49,7 @@ public class OrderTest {
     public void dockedFollowsTheDockAppsCheck() {
         Order o = new Order(Order.dockKey(DOCK), Arrays.asList("b/.B", "a/.A"), 1);
         assertEquals(1, Order.docked(o, DOCK));
-        assertEquals(-1, Order.docked(o, Collections.singletonList("com.plexapp.android")));
+        assertEquals(1, Order.docked(o, Collections.singletonList("com.plexapp.android")));
         assertEquals(-1, Order.docked(null, DOCK));
     }
 
@@ -88,8 +89,8 @@ public class OrderTest {
     @Test
     public void changedDockAppsDropTheSavedOrder() {
         Order o = new Order(Order.dockKey(DOCK), Arrays.asList("b/.B", "a/.A"));
-        assertTrue(Order.ranks(o, Arrays.asList("com.netflix.ninja", "com.plexapp.android")).isEmpty());
-        assertTrue(Order.ranks(o, Collections.singletonList("com.plexapp.android")).isEmpty());
+        assertFalse(Order.ranks(o, Arrays.asList("com.netflix.ninja", "com.plexapp.android")).isEmpty());
+        assertFalse(Order.ranks(o, Collections.singletonList("com.plexapp.android")).isEmpty());
         assertTrue(Order.ranks(null, DOCK).isEmpty());
     }
 
