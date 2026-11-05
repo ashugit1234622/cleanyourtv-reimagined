@@ -130,7 +130,30 @@ final class WallpaperPlayer {
 
     void start() {
         active = true;
+        if (current == null && !files.isEmpty()) {
+            if (image.getParent() == null) {
+                root.addView(image, 0, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            showFirst();
+        }
         update();
+    }
+
+    boolean isEmpty() {
+        return files.isEmpty() || current == null;
+    }
+
+    void reload(Config config) {
+        files.clear();
+        files.addAll(config.wallpapers);
+        if (config.wallpaperEnabled && !files.isEmpty()) {
+            if (image.getParent() == null) {
+                root.addView(image, 0, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            showFirst();
+        }
     }
 
     void stop() {

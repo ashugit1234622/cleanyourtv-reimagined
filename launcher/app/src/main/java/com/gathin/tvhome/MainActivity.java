@@ -1139,6 +1139,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (showStats) startStats();
         if (gameDay != null) gameDay.start();
         sky.update();
+        if (wallpaperPlayer != null && wallpaperPlayer.isEmpty()) {
+            wallpaperPlayer.reload(Config.load(this));
+        }
         wallpaperPlayer.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && lamp != null) {

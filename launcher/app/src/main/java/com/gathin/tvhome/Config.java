@@ -16,6 +16,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -667,8 +668,12 @@ final class Config {
         if (chosenRows >= 0 && chosenRows <= 3) rowsBelow = chosenRows;
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
+        File internalWallpaper = new File(ctx.getFilesDir(), WALLPAPER_NAME);
         File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
         if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
+        if (wallpaper == null && internalWallpaper.isFile() && internalWallpaper.length() > 0) {
+            wallpaper = internalWallpaper;
+        }
         // A theme can also switch the wallpaper off while the file is still there.
         boolean wallpaperEnabled = json == null || bool(json, "wallpaper", true);
         if (!wallpaperEnabled) wallpaper = null;
@@ -686,6 +691,9 @@ final class Config {
         // An unknown order must not silently change how an existing collection rotates.
         if (!WallpaperRotation.validOrder(wallpaperOrder)) wallpaperOrder = WallpaperRotation.ORDER_SHUFFLE;
         List<File> collection = dir != null ? WallpaperRotation.images(new File(dir, "wallpapers")) : Collections.emptyList();
+        if (collection.isEmpty()) {
+            collection = WallpaperRotation.images(new File(ctx.getFilesDir(), "wallpapers"));
+        }
         List<File> wallpapers = new ArrayList<>();
         if (rotationMinutes > 0 && wallpaperEnabled) {
             wallpapers.addAll(collection);
@@ -704,6 +712,9 @@ final class Config {
             wallpapers.addAll(chosen);
             wallpaper = chosen.isEmpty() ? null : chosen.get(0);
             wallpaperEnabled = !chosen.isEmpty();
+        }
+        if (wallpaper != null && wallpaper.isFile() && !wallpaper.equals(internalWallpaper)) {
+            copyFileAsync(wallpaper, internalWallpaper);
         }
         // A festive skin comes only from a theme; config.xml has no festival. seasonal_skin names one the same way
         // but launchers before it ignore the key, so a theme can carry it without older ones showing the diya skin.
@@ -767,14 +778,35 @@ final class Config {
             // explicit theme push or reset by the updated tools.
             SharedPreferences.Editor editor = choices.edit();
             if (!"absent".equals(token)) editor.remove("columns").remove("animations")
-                    .remove("advanced_effects").remove(ROWS_BELOW_DOCK_KEY).remove(WALLPAPER_CHOICE_KEY)
+                    .remove("advanced_effects").remove(ROWS_BELOW_DOCK_KEY)
                     .remove(DOCK_OPACITY_KEY).remove(CLOCK_FORMAT_KEY);
             editor.putString(THEME_SIGNATURE_KEY, signature).commit();
         } else if (!seen.equals(signature)) {
             choices.edit().remove("columns").remove("animations").remove("advanced_effects")
-                    .remove(ROWS_BELOW_DOCK_KEY).remove(WALLPAPER_CHOICE_KEY).remove(DOCK_OPACITY_KEY)
+                    .remove(ROWS_BELOW_DOCK_KEY).remove(DOCK_OPACITY_KEY)
                     .remove(CLOCK_FORMAT_KEY).putString(THEME_SIGNATURE_KEY, signature).commit();
         }
+    }
+
+    private static void copyFileAsync(File src, File dst) {
+        new Thread(() -> {
+            try {
+                if (dst.exists() && dst.length() == src.length() && dst.lastModified() >= src.lastModified()) {
+                    return;
+                }
+                File parent = dst.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                try (InputStream in = new FileInputStream(src);
+                     OutputStream out = new FileOutputStream(dst)) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }, "WallpaperCache").start();
     }
 
     /** The dock band opacity chosen in Launcher settings, or the theme's when none (or an out-of-range one) is saved. */

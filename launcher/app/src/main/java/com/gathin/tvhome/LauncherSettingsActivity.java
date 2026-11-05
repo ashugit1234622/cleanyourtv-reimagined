@@ -15,6 +15,10 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -217,22 +221,40 @@ public final class LauncherSettingsActivity extends Activity {
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     dialog.dismiss();
                     if (which == images.size()) {
-                        choices.edit().putString(Config.WALLPAPER_CHOICE_KEY, "none").apply();
+                        choices.edit().putString(Config.WALLPAPER_CHOICE_KEY, "none").commit();
+                        new File(getFilesDir(), Config.WALLPAPER_NAME).delete();
                     } else {
+                        File picked = images.get(which);
                         choices.edit().putString(Config.WALLPAPER_CHOICE_KEY,
-                                images.get(which).getName()).apply();
+                                picked.getName()).commit();
+                        copyToInternal(picked, new File(getFilesDir(), Config.WALLPAPER_NAME));
                     }
                     changed();
                     Toast.makeText(this, R.string.wallpaper_applied, Toast.LENGTH_SHORT).show();
                     refresh();
                 })
                 .setNeutralButton(R.string.wallpaper_theme_default, (dialog, which) -> {
-                    choices.edit().remove(Config.WALLPAPER_CHOICE_KEY).apply();
+                    choices.edit().remove(Config.WALLPAPER_CHOICE_KEY).commit();
+                    new File(getFilesDir(), Config.WALLPAPER_NAME).delete();
                     changed();
                     refresh();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private void copyToInternal(File src, File dst) {
+        new Thread(() -> {
+            try (InputStream in = new FileInputStream(src);
+                 OutputStream out = new FileOutputStream(dst)) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            } catch (Exception ignored) {
+            }
+        }, "CopyWallpaper").start();
     }
 
     /** Off, then every app with a TV entry point by name. Saved at once; it is read on the next boot. */
