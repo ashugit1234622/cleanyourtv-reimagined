@@ -136,9 +136,14 @@
             android:textSize="14sp" />
 
         <TextView
+            android:id="@+id/introSettingsChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="28dp" />
+
+        <TextView
             android:id="@+id/openOnStartChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="18dp"
             android:visibility="gone" />
 
         <TextView

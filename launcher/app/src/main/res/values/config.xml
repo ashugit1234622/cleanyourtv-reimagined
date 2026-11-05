@@ -44,10 +44,36 @@
     <bool name="boot_to_live_tv">false</bool>
 
     <!-- Boot intro animation (boot_intro): plays once per cold reboot, animating a centered
-         wordmark with Outfit font and revealing the home screen with a circular reveal.
+         message with Outfit font and revealing the home screen with a circular reveal.
          false keeps the normal immediate launch. Can also be set with "boot_intro" in a
          theme's config.json. -->
     <bool name="boot_intro">true</bool>
+
+    <!-- Also play the intro animation when waking from sleep or when the screensaver ends
+         (intro_on_wake). True by default when boot_intro is enabled. -->
+    <bool name="intro_on_wake">true</bool>
+
+    <!-- Minimum minutes between wake intros (intro_wake_min_gap_minutes) to avoid replaying on frequent wakes.
+         Default 5 minutes. -->
+    <integer name="intro_wake_min_gap_minutes">5</integer>
+
+    <!-- Hold duration in milliseconds for the boot/wake intro message (boot_intro_hold_ms). Default 2000ms. -->
+    <integer name="boot_intro_hold_ms">2000</integer>
+
+    <!-- Playback speed for boot intro entrance, reveal, and dock animations (boot_intro_speed): slow, normal, fast. Default normal. -->
+    <string name="boot_intro_speed" translatable="false">normal</string>
+
+    <!-- Title entrance animation style (boot_intro_animation): random, pop, fade, slide, letters, shimmer.
+         Default random. -->
+    <string name="boot_intro_animation" translatable="false">random</string>
+
+    <!-- Whether to display subtitles/tips under intro titles (boot_intro_messages). False shows titles only.
+         Default true. -->
+    <bool name="boot_intro_messages">true</bool>
+
+    <!-- Custom fixed intro text (boot_intro_text). When non-empty, overrides the random message list.
+         Default empty. -->
+    <string name="boot_intro_text" translatable="false"></string>
 
     <!-- An "Open on start" row in Launcher settings: pick any app on the TV, and the first time Home comes up
          after the TV starts it opens that app instead. Once per boot, like boot_to_live_tv (which wins when

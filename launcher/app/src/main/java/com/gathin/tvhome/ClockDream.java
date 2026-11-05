@@ -25,18 +25,21 @@ public class ClockDream extends DreamService {
     @Override
     public void onDreamingStarted() {
         super.onDreamingStarted();
+        BootIntro.notifyDreamStarted();
         scene.start();
     }
 
     @Override
     public void onDreamingStopped() {
         scene.stop();
+        BootIntro.notifyDreamEnded();
         super.onDreamingStopped();
     }
 
     @Override
     public void onDetachedFromWindow() {
         if (scene != null) scene.stop();
+        BootIntro.notifyDreamEnded();
         super.onDetachedFromWindow();
     }
 }

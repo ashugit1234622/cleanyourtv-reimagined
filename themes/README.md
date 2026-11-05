@@ -3,8 +3,8 @@
 A theme is a folder with a `config.json` and, optionally, a picture: a `wallpaper.jpg` or a `wallpapers/`
 collection. Pushing one changes the launcher's dock, layout and look on the TV without rebuilding the
 APK: the launcher reads `config.json` as an overlay over its built-in `config.xml` the next time it starts.
-Choices made in Launcher settings take priority until you choose Follow theme. Pushing a theme or
-using `tools/theme.sh --reset` also clears those on-TV column and motion choices.
+Choices made in Launcher settings (columns, motion, wallpaper, and Intro settings) take priority over theme `config.json` and built-in `config.xml` defaults until you choose Follow theme or Reset to defaults. Pushing a theme or
+using `tools/theme.sh --reset` also clears those on-TV choices.
 
 ```bash
 TV_HOST=192.168.1.50 tools/theme.sh themes/aurora          # push a theme and restart Home
@@ -129,7 +129,14 @@ A new key needs one there in the same pull request.
 | `module_cards` | bool | Look for module cards and ask about them (`true`); `false` turns the feature off |
 | `reduced_motion` | bool | Calmer motion for weak GPUs: the highlight slides without bouncing and settles within 5 frames, every animation lasts 90 ms or less, names, the top shelf, the glow and the highlight appear instead of fading, and there is no tile entrance (`false` by default) |
 | `boot_to_live_tv` | bool | Open the Live TV app (`live_tv_package`) on the first Home after the TV starts, once per boot |
-| `boot_intro` | bool | Boot intro animation: Outfit wordmark fade, hold, circular reveal, dock slide up once per reboot (`false` by default) |
+| `boot_intro` | bool | Boot intro animation: Outfit message fade, hold, circular reveal, dock slide up once per reboot (`true` by default) |
+| `intro_on_wake` | bool | Also play intro animation on wake from sleep or screensaver (`true` by default) |
+| `intro_wake_min_gap_minutes` | int | Minimum minutes between wake intros (`5` by default) |
+| `boot_intro_hold_ms` | int | Milliseconds to hold the intro message steady before circular reveal (`2000` by default) |
+| `boot_intro_speed` | string | Intro animation speed: `slow` (1.4x), `normal` (1.0x), `fast` (0.7x), scaling entrance, reveal and dock durations (`normal` by default) |
+| `boot_intro_animation` | string | Title entrance animation style: `random`, `pop`, `fade`, `slide`, `letters`, `shimmer` (`random` by default) |
+| `boot_intro_messages` | bool | Whether to display subtitles/tips under intro titles (`true` by default; `false` shows titles only) |
+| `boot_intro_text` | string | Custom fixed intro message to display instead of the dynamic list |
 | `open_on_start_choice` | bool | `true` adds an **Open on start** row to Launcher settings: pick an app on the TV, and the first Home after each boot opens it instead (once per boot; `boot_to_live_tv` wins when both are set; an app that is gone or disabled leaves Home on screen). Off by default |
 | `open_on_start_network_wait` | 0 to 600 | Seconds the first Home after the TV starts waits for a working internet connection before it opens the `boot_to_live_tv` or Open on start app. A streaming app opened before the network is back shows an error, and after a power cut Wi-Fi can take minutes, as the router starts again too. Home stays on screen meanwhile, and leaving Home cancels the opening. `0`, the default, opens the app at once |
 | `open_on_start_on_wake` | bool | With `open_on_start_choice`, the picked app also opens each time the screen comes back on, for TVs whose remote powers them into a light sleep with no boot. It opens over whatever was in front, an HDMI input included, and `open_on_start_network_wait` applies. Off by default |

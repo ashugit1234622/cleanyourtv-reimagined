@@ -35,12 +35,14 @@ public class ClockActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        BootIntro.notifyDreamStarted();
         scene.start();
     }
 
     @Override
     protected void onPause() {
         scene.stop();
+        BootIntro.notifyDreamEnded();
         super.onPause();
         finish();   // never left behind in the back stack
     }

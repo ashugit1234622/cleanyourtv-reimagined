@@ -1,5 +1,6 @@
 package com.gathin.tvhome;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -390,6 +391,7 @@ public final class QuickSettingsActivity extends Activity {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private String getConnectedBluetoothDeviceTitle() {
         SharedPreferences cache = getSharedPreferences(CACHE_PREFS, MODE_PRIVATE);
         try {

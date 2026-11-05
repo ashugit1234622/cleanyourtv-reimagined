@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="boot_intro_messages" translatable="false">
+        <item>Welcome||any</item>
+        <item>Welcome home||any</item>
+        <item>Hello there||any</item>
+        <item>Good to see you||any</item>
+        <item>You\'re back||wake</item>
+        <item>Welcome back||wake</item>
+        <item>Hello again|Pick up where you left off|wake</item>
+        <item>Back so soon?|We kept your seat warm|wake</item>
+        <item>Good morning||morning</item>
+        <item>Rise and stream||morning</item>
+        <item>Chai first, then TV?||morning</item>
+        <item>Early bird|Catch the news|morning</item>
+        <item>Good afternoon||afternoon</item>
+        <item>Perfect time for a break||afternoon</item>
+        <item>Good evening||evening</item>
+        <item>Time to unwind||evening</item>
+        <item>Rest and relax|Take your time|evening</item>
+        <item>Late night?||night</item>
+        <item>One more episode?||night</item>
+        <item>Movie night?|Find a blockbuster|night</item>
+        <item>Lights, camera, action|Grab the snacks|any</item>
+        <item>Showtime|Pick something good|any</item>
+        <item>Popcorn ready?|The big screen awaits|any</item>
+        <item>Your TV, your rules|No ads, no clutter|any</item>
+        <item>Ready when you are|No rush|any</item>
+        <item>Great to have you|Stream on|any</item>
+        <item>Welcome|Hold OK on a tile to move it|any</item>
+        <item>Welcome|Press Down to see all your apps|any</item>
+        <item>Welcome|Hold OK on Settings to reorder apps|any</item>
+        <item>Welcome|Press the Inputs button to switch HDMI|any</item>
+        <item>Welcome|The Clock screensaver starts when you\'re idle|any</item>
+        <item>Namaste|Chalo, kuch dekhte hain|any</item>
+        <item>Swagat hai|Aaram se baithiye|any</item>
+    </string-array>
+</resources>
+

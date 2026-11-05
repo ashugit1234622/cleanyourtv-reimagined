@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -108,8 +109,22 @@ final class Config {
     final boolean reducedMotion;
     /** Open the Live TV app on the first Home after the TV starts (config.xml, boot_to_live_tv). */
     final boolean bootToLiveTv;
-    /** Boot intro animation: Outfit wordmark fade, hold, circular reveal, dock slide (config.xml, boot_intro). */
+    /** Boot intro animation: Outfit message fade, hold, circular reveal, dock slide (config.xml, boot_intro). */
     final boolean bootIntro;
+    /** Play intro animation when waking from sleep or screensaver (config.xml, intro_on_wake). */
+    final boolean introOnWake;
+    /** Minimum minutes between wake intros (config.xml, intro_wake_min_gap_minutes). */
+    final int introWakeMinGapMinutes;
+    /** Hold duration in ms for the intro message (config.xml, boot_intro_hold_ms). */
+    final int bootIntroHoldMs;
+    /** Playback speed for intro animations (config.xml, boot_intro_speed): slow, normal, fast. */
+    final String bootIntroSpeed;
+    /** Title entrance animation style (config.xml, boot_intro_animation): random, pop, fade, slide, letters, shimmer. */
+    final String bootIntroAnimation;
+    /** Whether to show subtitles under intro titles (config.xml, boot_intro_messages). */
+    final boolean bootIntroMessages;
+    /** Custom fixed intro text override (config.xml, boot_intro_text). */
+    final String bootIntroText;
     /** Show the Open on start row in Launcher settings (config.xml, open_on_start_choice). */
     final boolean openOnStartChoice;
     /** Seconds the boot's app waits for a validated network; 0 opens it at once (open_on_start_network_wait). */
@@ -287,7 +302,7 @@ final class Config {
                    Map<String, String> appBanners, String sourcePanelService, String sourcePanelAction,
                    String sourcePanelExtra, boolean coocaaSources, String inputAction, List<String> inputSources,
                    String inputUriScheme, int columns, int rowsBelowDock, boolean animations, boolean advancedEffects,
-                   boolean shamsiDate, String greetingName, boolean moduleCards, boolean reducedMotion, boolean bootToLiveTv, boolean bootIntro, boolean openOnStartChoice, boolean dockTitle, boolean dockRow, boolean topMenu, boolean launcherSettingsButton, boolean reorderButton, boolean showNetworkPill, boolean showInputsPill, boolean iconOnlyButtons, boolean iconOnlyInputs, boolean libraryButton, boolean showLibraryPill, int wifiLabelWidth, boolean alwaysShowNames, boolean wallpaperTrueColor, boolean focusOvershoot, String vpnApp,
+                   boolean shamsiDate, String greetingName, boolean moduleCards, boolean reducedMotion, boolean bootToLiveTv, boolean bootIntro, boolean introOnWake, int introWakeMinGapMinutes, int bootIntroHoldMs, String bootIntroSpeed, String bootIntroAnimation, boolean bootIntroMessages, String bootIntroText, boolean openOnStartChoice, boolean dockTitle, boolean dockRow, boolean topMenu, boolean launcherSettingsButton, boolean reorderButton, boolean showNetworkPill, boolean showInputsPill, boolean iconOnlyButtons, boolean iconOnlyInputs, boolean libraryButton, boolean showLibraryPill, int wifiLabelWidth, boolean alwaysShowNames, boolean wallpaperTrueColor, boolean focusOvershoot, String vpnApp,
                    boolean showHomeSettingsShortcut, boolean showStats, String gameDay, boolean appLibrary, boolean appLibrarySelection, boolean libraryOkOpens, boolean uniformTiles, int backgroundColor, int skyIntensity,
                    int[] settingsKeycodes, boolean settingsKeyPanel, boolean restoreKeyServices, boolean wallpaperEnabled, File wallpaper, List<File> wallpapers,
                    int wallpaperRotationMinutes, int wallpaperDim, int dockOpacity, String wallpaperOrder, boolean overlayApplied,
@@ -336,6 +351,13 @@ final class Config {
         this.reducedMotion = reducedMotion;
         this.bootToLiveTv = bootToLiveTv;
         this.bootIntro = bootIntro;
+        this.introOnWake = introOnWake;
+        this.introWakeMinGapMinutes = introWakeMinGapMinutes;
+        this.bootIntroHoldMs = bootIntroHoldMs;
+        this.bootIntroSpeed = bootIntroSpeed != null ? bootIntroSpeed.trim().toLowerCase(Locale.ROOT) : "normal";
+        this.bootIntroAnimation = bootIntroAnimation != null ? bootIntroAnimation.trim().toLowerCase(Locale.ROOT) : "random";
+        this.bootIntroMessages = bootIntroMessages;
+        this.bootIntroText = bootIntroText != null ? bootIntroText.trim() : "";
         this.openOnStartChoice = openOnStartChoice;
         this.dockTitle = dockTitle;
         this.dockRow = dockRow;
@@ -466,6 +488,13 @@ final class Config {
         boolean reducedMotion = res.getBoolean(R.bool.reduced_motion);
         boolean bootToLiveTv = res.getBoolean(R.bool.boot_to_live_tv);
         boolean bootIntro = res.getBoolean(R.bool.boot_intro);
+        boolean introOnWake = res.getBoolean(R.bool.intro_on_wake);
+        int introWakeMinGapMinutes = res.getInteger(R.integer.intro_wake_min_gap_minutes);
+        int bootIntroHoldMs = res.getInteger(R.integer.boot_intro_hold_ms);
+        String bootIntroSpeed = res.getString(R.string.boot_intro_speed);
+        String bootIntroAnimation = res.getString(R.string.boot_intro_animation);
+        boolean bootIntroMessages = res.getBoolean(R.bool.boot_intro_messages);
+        String bootIntroText = res.getString(R.string.boot_intro_text);
         boolean openOnStartChoice = res.getBoolean(R.bool.open_on_start_choice);
         int openOnStartNetworkWait = res.getInteger(R.integer.open_on_start_network_wait);
         boolean openOnStartOnWake = res.getBoolean(R.bool.open_on_start_on_wake);
@@ -581,6 +610,13 @@ final class Config {
             reducedMotion = bool(json, "reduced_motion", reducedMotion);
             bootToLiveTv = bool(json, "boot_to_live_tv", bootToLiveTv);
             bootIntro = bool(json, "boot_intro", bootIntro);
+            introOnWake = bool(json, "intro_on_wake", introOnWake);
+            introWakeMinGapMinutes = integer(json, "intro_wake_min_gap_minutes", introWakeMinGapMinutes, 0, 1440);
+            bootIntroHoldMs = integer(json, "boot_intro_hold_ms", bootIntroHoldMs, 0, 10000);
+            bootIntroSpeed = string(json, "boot_intro_speed", bootIntroSpeed);
+            bootIntroAnimation = string(json, "boot_intro_animation", bootIntroAnimation);
+            bootIntroMessages = bool(json, "boot_intro_messages", bootIntroMessages);
+            bootIntroText = string(json, "boot_intro_text", bootIntroText);
             openOnStartChoice = bool(json, "open_on_start_choice", openOnStartChoice);
             openOnStartNetworkWait = integer(json, "open_on_start_network_wait", openOnStartNetworkWait, 0, 600);
             openOnStartOnWake = bool(json, "open_on_start_on_wake", openOnStartOnWake);
@@ -729,6 +765,7 @@ final class Config {
         return new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv, bootIntro,
+                introOnWake, introWakeMinGapMinutes, bootIntroHoldMs, bootIntroSpeed, bootIntroAnimation, bootIntroMessages, bootIntroText,
                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
                 iconOnlyButtons, iconOnlyInputs, libraryButton, showLibraryPill, wifiLabelWidth, alwaysShowNames, wallpaperTrueColor, focusOvershoot,
                 vpn, homeSettings, showStats, gameDay, library, librarySelection, libraryOkOpens, uniformTiles, background,

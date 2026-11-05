@@ -45,6 +45,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableString;
@@ -89,6 +90,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 /**
@@ -264,7 +266,33 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean singleRow;
     /** The highlight springs past its target (config.xml, focus_overshoot); false goes straight there. */
     private boolean focusOvershoot;
+    static final String ACTION_PREVIEW_INTRO = "com.gathin.tvhome.action.PREVIEW_INTRO";
+    private boolean previewFromSettings = false;
     private BootIntroOverlay bootIntroOverlay;
+    private boolean screenWokeUp = false;
+    private boolean wasNonInteractive = false;
+    private boolean isDreaming = false;
+    private boolean userNavigatedDuringIntro = false;
+    private final BroadcastReceiver bootIntroWakeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            String action = intent.getAction();
+            android.util.Log.d("BootIntro", "bootIntroWakeReceiver onReceive: " + action);
+            if ("android.intent.action.DREAMING_STARTED".equals(action)) {
+                isDreaming = true;
+                BootIntro.notifyDreamStarted();
+            } else if (Intent.ACTION_SCREEN_ON.equals(action)
+                    || Intent.ACTION_USER_PRESENT.equals(action)
+                    || "android.intent.action.DREAMING_STOPPED".equals(action)) {
+                screenWokeUp = true;
+                isDreaming = false;
+                BootIntro.notifyDreamEnded();
+            } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                wasNonInteractive = true;
+            }
+        }
+    };
     /** Festive skin from the theme (see Festival); applied while it is active today. */
     private Festival festival = Festival.NONE;
     private boolean festive;
@@ -980,6 +1008,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
+        IntentFilter bootIntroFilter = new IntentFilter();
+        bootIntroFilter.addAction(Intent.ACTION_SCREEN_ON);
+        bootIntroFilter.addAction(Intent.ACTION_SCREEN_OFF);
+        bootIntroFilter.addAction(Intent.ACTION_USER_PRESENT);
+        bootIntroFilter.addAction("android.intent.action.DREAMING_STARTED");
+        bootIntroFilter.addAction("android.intent.action.DREAMING_STOPPED");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(bootIntroWakeReceiver, bootIntroFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(bootIntroWakeReceiver, bootIntroFilter);
+        }
+
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.registerCallback(inputCallback, handler);
@@ -1001,33 +1041,140 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void checkAndTriggerBootIntro(Intent intent) {
         boolean testBoot = intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false);
+        int testMsg = intent != null ? intent.getIntExtra(BootIntro.EXTRA_TEST_MESSAGE, -1) : -1;
+        String testAnim = intent != null ? intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION) : null;
+        boolean testWake = intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST_WAKE, false);
+        boolean isPreview = intent != null && (intent.getBooleanExtra("test_preview", false) || ACTION_PREVIEW_INTRO.equals(intent.getAction()));
+        if (isPreview) {
+            previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
+            triggerBootIntro(false, -1, null, true);
+            return;
+        }
+
         Config cfg = Config.load(this);
+        IntroSettings introSettings = IntroSettings.load(this, cfg);
         SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
         int lastBoot = prefs.getInt(BootIntro.KEY_LAST_BOOT, -1);
         int currentBoot = Settings.Global.getInt(getContentResolver(), Settings.Global.BOOT_COUNT, -1);
 
-        if (BootIntro.shouldPlay(currentBoot, lastBoot, cfg.bootIntro, cfg.reducedMotion, testBoot)) {
+        if (BootIntro.shouldPlay(currentBoot, lastBoot, introSettings.bootIntro, cfg.reducedMotion, testBoot)) {
             if (currentBoot >= 0 && currentBoot != lastBoot) {
                 prefs.edit().putInt(BootIntro.KEY_LAST_BOOT, currentBoot).apply();
             }
-            triggerBootIntro();
+            prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, SystemClock.elapsedRealtime()).apply();
+            triggerBootIntro(testWake, testMsg, testAnim, testBoot);
+        } else {
+            focusFirstDockTile();
         }
     }
 
-    private void triggerBootIntro() {
+    private void checkAndTriggerWakeIntro() {
+        if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) return;
+
+        boolean dreamRan = BootIntro.consumeDreamEnded();
+        boolean woke = isDreaming || wasNonInteractive || screenWokeUp || dreamRan || BootIntro.isDreaming();
+        android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro: woke=" + woke
+                + " (isDreaming=" + isDreaming + ", wasNonInteractive=" + wasNonInteractive
+                + ", screenWokeUp=" + screenWokeUp + ", dreamRan=" + dreamRan
+                + ", bootIntroIsDreaming=" + BootIntro.isDreaming() + ")");
+
+        // Reset flags so we don't re-trigger
+        isDreaming = false;
+        wasNonInteractive = false;
+        screenWokeUp = false;
+        BootIntro.notifyDreamEnded();
+
+        if (!woke) return;
+
+        Config cfg = Config.load(this);
+        IntroSettings introSettings = IntroSettings.load(this, cfg);
+        if (!introSettings.bootIntro || !introSettings.introOnWake || cfg.reducedMotion) {
+            android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro skipped by config: bootIntro="
+                    + introSettings.bootIntro + ", introOnWake=" + introSettings.introOnWake + ", reducedMotion=" + cfg.reducedMotion);
+            return;
+        }
+
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        long lastIntroTime = prefs.getLong(BootIntro.KEY_LAST_INTRO_TIME, 0);
+        long now = SystemClock.elapsedRealtime();
+
+        boolean shouldPlay = BootIntro.shouldPlayOnWake(introSettings.bootIntro && introSettings.introOnWake, cfg.reducedMotion,
+                introSettings.wakeGapMinutes, lastIntroTime, now);
+        android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro: shouldPlay=" + shouldPlay
+                + " (lastIntroTime=" + lastIntroTime + ", now=" + now + ", gapMin=" + introSettings.wakeGapMinutes + ")");
+
+        if (shouldPlay) {
+            prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).apply();
+            triggerBootIntro(true, -1, null, false);
+        }
+    }
+
+    private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation) {
+        triggerBootIntro(isWake, forcedMessageIndex, forcedAnimation, false);
+    }
+
+    private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation, boolean isPreview) {
         if (bootIntroOverlay != null) {
             bootIntroOverlay.skip();
         }
         View homeContent = findViewById(R.id.homeContent);
         if (homeContent == null || grid == null || root == null) return;
 
+        Config cfg = Config.load(this);
+        IntroSettings introSettings = IntroSettings.load(this, cfg);
+
+        if (cfg.reducedMotion && !isPreview) return;
+        if (!introSettings.bootIntro && !isPreview && forcedMessageIndex < 0) return;
+
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+
+        String title = "Welcome";
+        String subtitle = "";
+
+        if (cfg.bootIntroText != null && !cfg.bootIntroText.isEmpty()) {
+            title = cfg.bootIntroText;
+            subtitle = "";
+        } else {
+            String[] raw = getResources().getStringArray(R.array.boot_intro_messages);
+            List<BootIntro.IntroMessage> list = BootIntro.parseMessages(raw);
+            int lastIndex = prefs.getInt(BootIntro.KEY_LAST_MESSAGE_INDEX, -1);
+            int selectedIndex;
+            if (forcedMessageIndex >= 0 && forcedMessageIndex < list.size()) {
+                selectedIndex = forcedMessageIndex;
+            } else {
+                int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                selectedIndex = BootIntro.selectMessageIndex(list, hour, isWake, lastIndex, new Random());
+            }
+
+            if (selectedIndex >= 0 && selectedIndex < list.size()) {
+                BootIntro.IntroMessage chosen = list.get(selectedIndex);
+                title = chosen.title;
+                subtitle = chosen.subtitle;
+                if (!isPreview) {
+                    prefs.edit().putInt(BootIntro.KEY_LAST_MESSAGE_INDEX, selectedIndex).apply();
+                }
+            }
+        }
+
+        String anim = forcedAnimation != null ? forcedAnimation : introSettings.animation;
+
         bootIntroOverlay = new BootIntroOverlay(this);
+        bootIntroOverlay.setIntroSettings(introSettings, title, subtitle, anim);
         root.addView(bootIntroOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        userNavigatedDuringIntro = false;
         bootIntroOverlay.start(homeContent, grid, () -> {
             bootIntroOverlay = null;
-            restoreFocus();
+            if (previewFromSettings) {
+                previewFromSettings = false;
+                Intent backIntent = new Intent(this, IntroSettingsActivity.class);
+                backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                backIntent.putExtra(IntroSettingsActivity.EXTRA_FOCUS_PREVIEW, true);
+                startActivity(backIntent);
+            } else {
+                focusFirstDockTile();
+            }
         });
     }
 
@@ -1111,8 +1258,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && (ACTION_PREVIEW_INTRO.equals(intent.getAction()) || intent.getBooleanExtra("test_preview", false))) {
+            previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
+            triggerBootIntro(false, -1, null, true);
+            return;
+        }
         if (intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false)) {
-            triggerBootIntro();
+            int testMsg = intent.getIntExtra(BootIntro.EXTRA_TEST_MESSAGE, -1);
+            String testAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
+            boolean testWake = intent.getBooleanExtra(BootIntro.EXTRA_TEST_WAKE, false);
+            triggerBootIntro(testWake, testMsg, testAnim);
             return;
         }
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
@@ -1135,6 +1290,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onStart() {
+        checkAndTriggerWakeIntro();
         super.onStart();
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
         stopped = false;
@@ -1166,6 +1322,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
         restartIdleClock();
+        checkAndTriggerWakeIntro();
         promptsPaused = false;
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
@@ -1373,6 +1530,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && !pm.isInteractive()) wasNonInteractive = true;
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -1401,6 +1560,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onStop() {
         super.onStop();
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && !pm.isInteractive()) wasNonInteractive = true;
         started = false;
         unregisterReceiver(timeReceiver);
         clockRefresh.stop();
@@ -1450,6 +1611,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cancelHoldOk();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
+        unregisterReceiver(bootIntroWakeReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1507,10 +1669,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * - a tile carried: arrows move it; Back (or OK) puts it down and the mode stays on for the next one.
      * Other keys (volume, Home) pass through; leaving the launcher ends the mode and saves.
      */
+    private static boolean isNavKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DPAD_UP
+                || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) {
             boolean revealing = bootIntroOverlay.isRevealing();
+            if (revealing && isNavKey(event.getKeyCode())) {
+                userNavigatedDuringIntro = true;
+            }
             bootIntroOverlay.skip();
             if (!revealing) return true;
             return super.dispatchKeyEvent(event);
@@ -2785,6 +2957,92 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         };
         grid.addOnScrollListener(pendingFocusScroll);
         grid.smoothScrollToPosition(pos);
+        grid.post(() -> {
+            if (pendingFocusScroll != null) {
+                RecyclerView.ViewHolder h = grid.findViewHolderForAdapterPosition(pos);
+                if (h != null) {
+                    grid.removeOnScrollListener(pendingFocusScroll);
+                    pendingFocusScroll = null;
+                    View card = h.itemView.findViewById(R.id.card);
+                    if (card != null) card.requestFocus();
+                }
+            }
+        });
+    }
+
+    private void focusFirstDockTile() {
+        if (userNavigatedDuringIntro) {
+            userNavigatedDuringIntro = false;
+            return;
+        }
+        userNavigatedDuringIntro = false;
+
+        if (adapter == null || adapter.appCount() == 0) {
+            if (adapter != null && adapter.isLibraryAt(0)) focusLibrary();
+            else {
+                View top = firstTopButton();
+                if (top != null) top.requestFocus();
+            }
+            return;
+        }
+
+        final int pos = adapter.focusablePosition(0);
+        lastFocused = pos;
+        lastFocusedKey = adapter.keyAt(pos);
+
+        RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+        if (vh != null) {
+            View card = vh.itemView.findViewById(R.id.card);
+            if (card != null) {
+                card.requestFocus();
+                onTileFocused(pos, card);
+                return;
+            }
+        }
+
+        grid.post(() -> {
+            if (userNavigatedDuringIntro) return;
+            RecyclerView.ViewHolder h = grid.findViewHolderForAdapterPosition(pos);
+            if (h != null) {
+                View card = h.itemView.findViewById(R.id.card);
+                if (card != null) {
+                    card.requestFocus();
+                    onTileFocused(pos, card);
+                    return;
+                }
+            } else if (grid.getChildCount() > 0) {
+                View first = grid.getChildAt(0);
+                View card = first.findViewById(R.id.card);
+                if (card != null) {
+                    card.requestFocus();
+                    onTileFocused(pos, card);
+                    return;
+                }
+            }
+            grid.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                @Override
+                public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                           int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                    grid.removeOnLayoutChangeListener(this);
+                    if (userNavigatedDuringIntro) return;
+                    RecyclerView.ViewHolder holder = grid.findViewHolderForAdapterPosition(pos);
+                    if (holder != null) {
+                        View target = holder.itemView.findViewById(R.id.card);
+                        if (target != null) {
+                            target.requestFocus();
+                            onTileFocused(pos, target);
+                        }
+                    } else if (grid.getChildCount() > 0) {
+                        View first = grid.getChildAt(0);
+                        View target = first.findViewById(R.id.card);
+                        if (target != null) {
+                            target.requestFocus();
+                            onTileFocused(pos, target);
+                        }
+                    }
+                }
+            });
+        });
     }
 
     // ---- top bar ---------------------------------------------------------------------------------

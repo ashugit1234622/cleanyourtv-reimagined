@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home</string>
-    <string name="boot_intro_wordmark" translatable="false">CleanYourTV</string>
     <string name="inputs">Inputs</string>
     <string name="wifi">Wi-Fi</string>
     <string name="settings">Settings</string>
@@ -163,4 +162,31 @@
     <string name="clock_format_system">System</string>
     <string name="clock_format_12">12-hour</string>
     <string name="clock_format_24">24-hour</string>
+    <!-- Intro settings -->
+    <string name="intro_settings_title">Intro</string>
+    <string name="intro_settings_state">Intro: %1$s</string>
+    <string name="intro_boot_state">Boot intro: %1$s</string>
+    <string name="intro_wake_state">Play on wake: %1$s</string>
+    <string name="intro_wake_gap_state">Wake gap: %1$d min</string>
+    <string name="intro_hold_state">Hold time: %1$s</string>
+    <string name="intro_speed_state">Speed: %1$s</string>
+    <string name="intro_animation_state">Animation: %1$s</string>
+    <string name="intro_messages_state">Messages: %1$s</string>
+    <string name="intro_preview">Preview intro</string>
+    <string name="intro_reset_defaults">Reset to defaults</string>
+    <string name="intro_reset_done">Intro reset to defaults</string>
+    <string name="intro_reduced_motion_note">Reduced motion is active (intro skipped)</string>
+    <string name="intro_reduced_motion_tag">Reduced motion active</string>
+    <string name="intro_speed_slow">Slow</string>
+    <string name="intro_speed_normal">Normal</string>
+    <string name="intro_speed_fast">Fast</string>
+    <string name="intro_anim_random">Random</string>
+    <string name="intro_anim_pop">Pop</string>
+    <string name="intro_anim_fade">Fade</string>
+    <string name="intro_anim_slide">Slide</string>
+    <string name="intro_anim_letters">Letters</string>
+    <string name="intro_anim_shimmer">Shimmer</string>
+    <string name="intro_messages_all">Titles and tips</string>
+    <string name="intro_messages_titles">Titles only</string>
+    <string name="intro_messages_off">Off</string>
 </resources>

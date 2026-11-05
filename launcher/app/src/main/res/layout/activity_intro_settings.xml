@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF101419"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="72dp"
+        android:paddingEnd="72dp"
+        android:paddingTop="38dp"
+        android:paddingBottom="38dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/intro_settings_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="34sp" />
+
+        <TextView
+            android:id="@+id/introBootChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="28dp" />
+
+        <TextView
+            android:id="@+id/introReducedMotionNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/intro_reduced_motion_note"
+            android:textColor="#FFACB8C1"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/introWakeChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introWakeGapChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introHoldChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introSpeedChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introAnimationChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introMessagesChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/introPreviewChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="20dp"
+            android:text="@string/intro_preview" />
+
+        <TextView
+            android:id="@+id/introResetChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="10dp"
+            android:text="@string/intro_reset_defaults" />
+
+    </LinearLayout>
+</ScrollView>
+

@@ -42,6 +42,7 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView wallpaperRotationChoice;
     private TextView animationsChoice;
     private TextView advancedChoice;
+    private TextView introSettingsChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
     private int columns;
@@ -163,6 +164,24 @@ public final class LauncherSettingsActivity extends Activity {
                         .show();
             }
         });
+        introSettingsChoice = findViewById(R.id.introSettingsChoice);
+        introSettingsChoice.setOnClickListener(v -> open(new Intent(this, IntroSettingsActivity.class)));
+        introSettingsChoice.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                Config c = Config.load(this);
+                IntroSettings s = IntroSettings.load(this, c);
+                boolean newVal = !s.bootIntro;
+                getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).edit()
+                        .putBoolean(IntroSettings.KEY_BOOT_INTRO, newVal).apply();
+                v.playSoundEffect(android.view.SoundEffectConstants.CLICK);
+                changed();
+                refresh();
+                return true;
+            }
+            return false;
+        });
+
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
         if (config.openOnStartChoice) {
             openOnStartChoice.setVisibility(View.VISIBLE);
@@ -175,6 +194,7 @@ public final class LauncherSettingsActivity extends Activity {
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
                     .remove(Config.WALLPAPER_ROTATION_KEY)
                     .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY).commit();
+            getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).edit().clear().apply();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
@@ -195,6 +215,12 @@ public final class LauncherSettingsActivity extends Activity {
         refresh();
         if (config.launcherSettingsButton) reorderChoice.requestFocus();
         else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refresh();
     }
 
     private void reverseRow(TextView[] views) {
@@ -349,6 +375,10 @@ public final class LauncherSettingsActivity extends Activity {
                 getString(advancedEffects ? R.string.on : R.string.off)));
         advancedChoice.setEnabled(animations);
         advancedChoice.setAlpha(animations ? 1f : 0.5f);
+        Config currentConfig = Config.load(this);
+        IntroSettings intro = IntroSettings.load(this, currentConfig);
+        introSettingsChoice.setText(getString(R.string.intro_settings_state,
+                getString(intro.bootIntro ? R.string.on : R.string.off)));
         String wallpaperCurrent = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
         wallpaperChoice.setText(getString(R.string.wallpaper_state,
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
@@ -365,7 +395,8 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.WALLPAPER_ROTATION_KEY)
                 || choices.contains(Config.DOCK_OPACITY_KEY) || choices.contains(Config.CLOCK_FORMAT_KEY)
-                || choices.contains(OpenOnStart.KEY);
+                || choices.contains(OpenOnStart.KEY)
+                || !getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).getAll().isEmpty();
     }
 
     private void open(Intent intent) {

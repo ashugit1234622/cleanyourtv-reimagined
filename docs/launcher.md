@@ -61,6 +61,16 @@ The launcher's own page has these rows, top to bottom:
   Follow theme, or push the theme again.
 - **Animations** on or off, and **Advanced effects** (tile lift, icon zoom and smooth ambient-colour
   transitions; they may use more memory) once animations are on.
+- **Intro** (on/off quick toggle, or OK to open Intro settings): configure boot and wake reveal intros.
+  - **Boot intro**: on/off (`boot_intro`, once per reboot).
+  - **Play on wake**: on/off (`intro_on_wake`, after sleep or screensaver).
+  - **Wake gap**: 1, 2, 5, 10, 15, 30, or 60 minutes minimum between wake intros.
+  - **Hold time**: 0.5s to 4.0s (in 0.5s steps). Clamped so total intro duration never exceeds 5.0s.
+  - **Speed**: Slow (1.4x), Normal (1.0x), or Fast (0.7x), scaling entrance, reveal, and dock durations.
+  - **Animation**: Random, Pop, Fade, Slide, Letters, or Shimmer.
+  - **Messages**: Titles and tips, Titles only, or Off.
+  - **Preview intro**: immediately tests the intro with current settings; skips on any remote key and returns to settings with focus restored on Preview.
+  - **Reset to defaults**: clears user preferences and follows theme or `config.xml` defaults.
 - **Open on start**, only with `open_on_start_choice`: Off, or an app that opens instead of Home the first
   time Home comes up after the TV starts. Once per boot, so Home and Back still reach the launcher.
 - **Follow theme (reset on-TV choices)**, which clears every choice above. Pushing or resetting a theme
