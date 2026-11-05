@@ -35,6 +35,7 @@ public final class LauncherSettingsActivity extends Activity {
     private static final String[] CLOCK_FORMATS = {"system", "12", "24"};
     private final TextView[] clockChoices = new TextView[CLOCK_FORMATS.length];
     private TextView wallpaperChoice;
+    private TextView wallpaperRotationChoice;
     private TextView animationsChoice;
     private TextView advancedChoice;
     private TextView followThemeChoice;
@@ -45,6 +46,7 @@ public final class LauncherSettingsActivity extends Activity {
     private String clockFormat;
     private boolean animations;
     private boolean advancedEffects;
+    private boolean wallpaperRotation;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -125,6 +127,16 @@ public final class LauncherSettingsActivity extends Activity {
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
+        wallpaperRotationChoice = findViewById(R.id.wallpaperRotationChoice);
+        wallpaperRotation = choices.contains(Config.WALLPAPER_ROTATION_KEY)
+                ? choices.getBoolean(Config.WALLPAPER_ROTATION_KEY, false)
+                : config.wallpaperRotationMinutes > 0;
+        wallpaperRotationChoice.setOnClickListener(v -> {
+            wallpaperRotation = !wallpaperRotation;
+            choices.edit().putBoolean(Config.WALLPAPER_ROTATION_KEY, wallpaperRotation).apply();
+            changed();
+            refresh();
+        });
         animationsChoice = findViewById(R.id.animationsChoice);
         animationsChoice.setOnClickListener(v -> {
             animations = !animations;
@@ -157,6 +169,7 @@ public final class LauncherSettingsActivity extends Activity {
             if (!hasOnTvChoices()) return;
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
+                    .remove(Config.WALLPAPER_ROTATION_KEY)
                     .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
@@ -165,6 +178,9 @@ public final class LauncherSettingsActivity extends Activity {
             clockFormat = current.clockFormat;
             animations = current.animations;
             advancedEffects = current.animations && current.advancedEffects;
+            wallpaperRotation = choices.contains(Config.WALLPAPER_ROTATION_KEY)
+                    ? choices.getBoolean(Config.WALLPAPER_ROTATION_KEY, false)
+                    : current.wallpaperRotationMinutes > 0;
             changed();
             refresh();
         });
@@ -316,6 +332,8 @@ public final class LauncherSettingsActivity extends Activity {
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
+        wallpaperRotationChoice.setText(getString(R.string.wallpaper_rotation_state,
+                getString(wallpaperRotation ? R.string.on : R.string.off)));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
         followThemeChoice.setSelected(!hasOnTvChoices());
     }
@@ -323,8 +341,9 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean hasOnTvChoices() {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
-                || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
-                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(OpenOnStart.KEY);
+                || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.WALLPAPER_ROTATION_KEY)
+                || choices.contains(Config.DOCK_OPACITY_KEY) || choices.contains(Config.CLOCK_FORMAT_KEY)
+                || choices.contains(OpenOnStart.KEY);
     }
 
     private void open(Intent intent) {
