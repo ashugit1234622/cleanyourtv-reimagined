@@ -163,6 +163,9 @@ public class BootIntroTest {
         int gapMinutes = 5;
         long gapMs = 5 * 60 * 1000L;
 
+        // Gap == 0 always plays immediately (for user testing)
+        assertTrue(BootIntro.shouldPlayOnWake(true, false, 0, baseTime, baseTime + 1000));
+
         // First wake ever (lastWakeMs <= 0) plays
         assertTrue(BootIntro.shouldPlayOnWake(true, false, gapMinutes, 0, baseTime));
         assertTrue(BootIntro.shouldPlayOnWake(true, false, gapMinutes, -1, baseTime));
@@ -348,5 +351,91 @@ public class BootIntroTest {
         assertTrue("consumeDreamEnded must return true on first call", BootIntro.consumeDreamEnded());
         assertFalse("consumeDreamEnded must return false on subsequent calls", BootIntro.consumeDreamEnded());
         assertFalse("isDreamEnded must be false after consumption", BootIntro.isDreamEnded());
+    }
+
+    @Test
+    public void wakeGapAcrossReboot() {
+        int gapMinutes = 5;
+        // Case: lastWakeMs was 3,000,000ms in previous boot.
+        // After reboot, elapsedRealtime resets to 10,000ms.
+        // nowMs (10,000) < lastWakeMs (3,000,000)
+        // Must recognize the reboot and return true!
+        assertTrue("Must play on wake after reboot even if elapsedRealtime is smaller than lastWakeMs",
+                BootIntro.shouldPlayOnWake(true, false, gapMinutes, 3_000_000L, 10_000L));
+
+        // Normal uptime: nowMs >= lastWakeMs
+        assertFalse(BootIntro.shouldPlayOnWake(true, false, gapMinutes, 10_000L, 10_000L + 60_000L));
+        assertTrue(BootIntro.shouldPlayOnWake(true, false, gapMinutes, 10_000L, 10_000L + 300_000L));
+    }
+
+    @Test
+    public void wakeDecisionEvaluatingIndependentSignals() {
+        long gapMs = 300_000L;
+
+        // 1. Returning from an app launched by the launcher: NEVER wakes
+        BootIntro.WakeDecision dApp = BootIntro.evaluateWakeState(
+                false, false, false, false, false, false, false, false, true, 400_000L, gapMs);
+        assertFalse("Returning from app must never trigger wake intro", dApp.woke);
+        assertEquals("app_return", dApp.reason);
+
+        // 2. Normal Home press while interactive: not a wake
+        BootIntro.WakeDecision dHome = BootIntro.evaluateWakeState(
+                false, false, false, false, false, false, false, false, false, 50_000L, gapMs);
+        assertFalse("Normal home press must not trigger wake intro", dHome.woke);
+        assertEquals("normal_home", dHome.reason);
+
+        // 3. Screen off or wake broadcast received
+        BootIntro.WakeDecision dScreen = BootIntro.evaluateWakeState(
+                false, false, true, false, false, false, false, false, false, 50_000L, gapMs);
+        assertTrue("Screen woke up must trigger wake intro", dScreen.woke);
+        assertEquals("screen_off_or_wake", dScreen.reason);
+
+        // 4. Was dreaming in memory
+        BootIntro.WakeDecision dDream = BootIntro.evaluateWakeState(
+                true, false, false, false, false, false, false, false, false, 50_000L, gapMs);
+        assertTrue("Dreaming state must trigger wake intro", dDream.woke);
+        assertEquals("dreaming", dDream.reason);
+
+        // 5. Dream ended before onStart (DREAMING_STOPPED before onStart)
+        BootIntro.WakeDecision dDreamEnd = BootIntro.evaluateWakeState(
+                false, false, false, true, false, false, false, false, false, 50_000L, gapMs);
+        assertTrue("Dream ended state must trigger wake intro", dDreamEnd.woke);
+        assertEquals("dream_ended", dDreamEnd.reason);
+
+        // 6. Process restart: in-memory flags lost, but persisted state restored from prefs
+        BootIntro.WakeDecision dPersistedDream = BootIntro.evaluateWakeState(
+                false, false, false, false, true, true, false, false, false, 50_000L, gapMs);
+        assertTrue("Persisted dreaming across process death must trigger wake intro", dPersistedDream.woke);
+        assertEquals("dreaming", dPersistedDream.reason);
+
+        // 7. Process restart: screen was off persisted
+        BootIntro.WakeDecision dPersistedScreen = BootIntro.evaluateWakeState(
+                false, false, false, false, true, false, true, false, false, 50_000L, gapMs);
+        assertTrue("Persisted screen off must trigger wake intro", dPersistedScreen.woke);
+        assertEquals("screen_off_or_wake", dPersistedScreen.reason);
+
+        // 8. Was non-interactive at stop (standby without explicit broadcast)
+        BootIntro.WakeDecision dNonInter = BootIntro.evaluateWakeState(
+                false, true, false, false, false, false, false, false, false, 50_000L, gapMs);
+        assertTrue("Non-interactive at last stop must trigger wake intro", dNonInter.woke);
+        assertEquals("non_interactive_at_stop", dNonInter.reason);
+
+        // 9. Idle duration exceeded without any app launch
+        BootIntro.WakeDecision dIdle = BootIntro.evaluateWakeState(
+                false, false, false, false, false, false, false, false, false, 350_000L, gapMs);
+        assertTrue("Long idle duration must trigger wake intro", dIdle.woke);
+        assertEquals("idle_duration_exceeded", dIdle.reason);
+    }
+
+    @Test
+    public void clearDreamStateDoesNotPrimDreamEnded() {
+        BootIntro.notifyDreamStarted();
+        assertTrue(BootIntro.isDreaming());
+
+        // clearDreamState must reset both dreaming and dreamEnded to false
+        BootIntro.clearDreamState();
+        assertFalse(BootIntro.isDreaming());
+        assertFalse(BootIntro.isDreamEnded());
+        assertFalse(BootIntro.consumeDreamEnded());
     }
 }

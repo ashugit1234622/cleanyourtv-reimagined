@@ -41,6 +41,7 @@ public class HeaderFocusIndicator extends View {
     private View currentFocusedView;
     private boolean isVisible = false;
     private boolean reducedMotion = false;
+    private boolean suppressed = false;
 
     // Organic fluid curve: rapid start, smooth glide, gentle cushion into target
     private static final Interpolator FLUID_INTERPOLATOR =
@@ -63,10 +64,33 @@ public class HeaderFocusIndicator extends View {
         this.reducedMotion = reduced;
     }
 
+    public void setSuppressed(boolean suppressed) {
+        this.suppressed = suppressed;
+        if (suppressed) {
+            reset();
+        }
+    }
+
+    public void reset() {
+        removeCallbacks(null);
+        if (moveAnimator != null) moveAnimator.cancel();
+        if (fadeAnimator != null) fadeAnimator.cancel();
+        if (textAnimator != null) textAnimator.cancel();
+        if (currentFocusedView instanceof TextView) {
+            applyColor((TextView) currentFocusedView, 0xFFFFFFFF);
+        }
+        currentFocusedView = null;
+        isVisible = false;
+        currentAlpha = 0f;
+        currentScale = 1f;
+        invalidate();
+    }
+
     public void onButtonFocused(View button) {
-        if (button == null || button.getVisibility() != View.VISIBLE) return;
+        if (suppressed || button == null || button.getVisibility() != View.VISIBLE) return;
 
         button.post(() -> {
+            if (suppressed || !button.isFocused() || !button.isAttachedToWindow()) return;
             int[] buttonLoc = new int[2];
             button.getLocationInWindow(buttonLoc);
             int[] myLoc = new int[2];
@@ -96,7 +120,7 @@ public class HeaderFocusIndicator extends View {
     }
 
     public void onFocusLost() {
-        if (!isVisible) return;
+        if (!isVisible && currentFocusedView == null) return;
         View old = currentFocusedView;
         currentFocusedView = null;
         fadeOut(old);

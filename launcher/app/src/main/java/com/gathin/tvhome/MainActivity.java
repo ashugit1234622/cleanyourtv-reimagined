@@ -272,24 +272,53 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean screenWokeUp = false;
     private boolean wasNonInteractive = false;
     private boolean isDreaming = false;
+    private boolean launcherAppLaunched = false;
     private boolean userNavigatedDuringIntro = false;
+
+    private void setAppLaunched(boolean launched) {
+        launcherAppLaunched = launched;
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        prefs.edit().putBoolean(BootIntro.KEY_APP_LAUNCHED, launched).apply();
+    }
+
     private final BroadcastReceiver bootIntroWakeReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
             String action = intent.getAction();
             android.util.Log.d("BootIntro", "bootIntroWakeReceiver onReceive: " + action);
+            SharedPreferences prefs = context.getSharedPreferences(BootIntro.PREFS_NAME, Context.MODE_PRIVATE);
             if ("android.intent.action.DREAMING_STARTED".equals(action)) {
                 isDreaming = true;
                 BootIntro.notifyDreamStarted();
+                prefs.edit().putBoolean(BootIntro.KEY_DREAMING_PERSISTED, true)
+                        .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
+                        .putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
+                        .apply();
             } else if (Intent.ACTION_SCREEN_ON.equals(action)
                     || Intent.ACTION_USER_PRESENT.equals(action)
                     || "android.intent.action.DREAMING_STOPPED".equals(action)) {
+                if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) {
+                    BootIntro.clearDreamState();
+                    prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, false)
+                            .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, false)
+                            .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
+                            .apply();
+                    return;
+                }
                 screenWokeUp = true;
                 isDreaming = false;
                 BootIntro.notifyDreamEnded();
+                prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, true).apply();
+                if (resumed && !stopped && (bootIntroOverlay == null || !bootIntroOverlay.isPlaying())) {
+                    checkAndTriggerWakeIntro();
+                }
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 wasNonInteractive = true;
+                prefs.edit().putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, true)
+                        .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
+                        .putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
+                        .apply();
             }
         }
     };
@@ -1044,6 +1073,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int testMsg = intent != null ? intent.getIntExtra(BootIntro.EXTRA_TEST_MESSAGE, -1) : -1;
         String testAnim = intent != null ? intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION) : null;
         boolean testWake = intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST_WAKE, false);
+        if (intent != null && intent.hasExtra("test_wake_gap")) {
+            int gap = intent.getIntExtra("test_wake_gap", -1);
+            getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE)
+                    .edit().putInt(BootIntro.KEY_TEST_WAKE_GAP, gap).apply();
+        }
         boolean isPreview = intent != null && (intent.getBooleanExtra("test_preview", false) || ACTION_PREVIEW_INTRO.equals(intent.getAction()));
         if (isPreview) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
@@ -1062,6 +1096,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 prefs.edit().putInt(BootIntro.KEY_LAST_BOOT, currentBoot).apply();
             }
             prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, SystemClock.elapsedRealtime()).apply();
+            HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+            if (headerFocus != null) {
+                headerFocus.setSuppressed(true);
+            }
             triggerBootIntro(testWake, testMsg, testAnim, testBoot);
         } else {
             focusFirstDockTile();
@@ -1071,41 +1109,86 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void checkAndTriggerWakeIntro() {
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) return;
 
-        boolean dreamRan = BootIntro.consumeDreamEnded();
-        boolean woke = isDreaming || wasNonInteractive || screenWokeUp || dreamRan || BootIntro.isDreaming();
-        android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro: woke=" + woke
-                + " (isDreaming=" + isDreaming + ", wasNonInteractive=" + wasNonInteractive
-                + ", screenWokeUp=" + screenWokeUp + ", dreamRan=" + dreamRan
-                + ", bootIntroIsDreaming=" + BootIntro.isDreaming() + ")");
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        boolean persistedPendingWake = prefs.getBoolean(BootIntro.KEY_PENDING_WAKE, false);
+        boolean persistedDreaming = prefs.getBoolean(BootIntro.KEY_DREAMING_PERSISTED, false);
+        boolean persistedScreenOff = prefs.getBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false);
+        boolean persistedNonInteractive = prefs.getBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, false);
+        boolean appLaunched = launcherAppLaunched || prefs.getBoolean(BootIntro.KEY_APP_LAUNCHED, false);
 
-        // Reset flags so we don't re-trigger
-        isDreaming = false;
-        wasNonInteractive = false;
-        screenWokeUp = false;
-        BootIntro.notifyDreamEnded();
-
-        if (!woke) return;
+        long lastStopTime = prefs.getLong(BootIntro.KEY_LAST_STOP_TIME, 0);
+        long now = SystemClock.elapsedRealtime();
+        long stoppedDurationMs = (lastStopTime > 0 && now >= lastStopTime) ? (now - lastStopTime) : 0;
 
         Config cfg = Config.load(this);
         IntroSettings introSettings = IntroSettings.load(this, cfg);
-        if (!introSettings.bootIntro || !introSettings.introOnWake || cfg.reducedMotion) {
-            android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro skipped by config: bootIntro="
-                    + introSettings.bootIntro + ", introOnWake=" + introSettings.introOnWake + ", reducedMotion=" + cfg.reducedMotion);
+        int testGap = prefs.getInt(BootIntro.KEY_TEST_WAKE_GAP, -1);
+        int effectiveGapMinutes = (testGap >= 0) ? testGap : introSettings.wakeGapMinutes;
+        long gapMs = (long) effectiveGapMinutes * 60 * 1000L;
+
+        boolean dreamRan = BootIntro.consumeDreamEnded();
+
+        BootIntro.WakeDecision decision = BootIntro.evaluateWakeState(
+                isDreaming,
+                wasNonInteractive,
+                screenWokeUp,
+                dreamRan,
+                persistedPendingWake,
+                persistedDreaming,
+                persistedScreenOff,
+                persistedNonInteractive,
+                appLaunched,
+                stoppedDurationMs,
+                gapMs
+        );
+
+        // Reset memory & persisted flags once evaluated
+        isDreaming = false;
+        wasNonInteractive = false;
+        screenWokeUp = false;
+        launcherAppLaunched = false;
+        BootIntro.clearDreamState();
+        prefs.edit()
+                .putBoolean(BootIntro.KEY_PENDING_WAKE, false)
+                .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, false)
+                .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
+                .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, false)
+                .putBoolean(BootIntro.KEY_APP_LAUNCHED, false)
+                .apply();
+
+        if (!decision.woke) {
+            android.util.Log.d("BootIntro", "wake intro suppressed: " + decision.reason);
             return;
         }
 
-        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        if (!introSettings.bootIntro || !introSettings.introOnWake || cfg.reducedMotion) {
+            android.util.Log.d("BootIntro", "wake intro suppressed: config disabled (bootIntro="
+                    + introSettings.bootIntro + ", introOnWake=" + introSettings.introOnWake + ", reducedMotion=" + cfg.reducedMotion + ")");
+            return;
+        }
+
         long lastIntroTime = prefs.getLong(BootIntro.KEY_LAST_INTRO_TIME, 0);
-        long now = SystemClock.elapsedRealtime();
+        boolean shouldPlay = BootIntro.shouldPlayOnWake(
+                introSettings.bootIntro && introSettings.introOnWake,
+                cfg.reducedMotion,
+                effectiveGapMinutes,
+                lastIntroTime,
+                now
+        );
 
-        boolean shouldPlay = BootIntro.shouldPlayOnWake(introSettings.bootIntro && introSettings.introOnWake, cfg.reducedMotion,
-                introSettings.wakeGapMinutes, lastIntroTime, now);
-        android.util.Log.d("BootIntro", "checkAndTriggerWakeIntro: shouldPlay=" + shouldPlay
-                + " (lastIntroTime=" + lastIntroTime + ", now=" + now + ", gapMin=" + introSettings.wakeGapMinutes + ")");
-
+        long elapsedSec = (lastIntroTime > 0 && now >= lastIntroTime) ? (now - lastIntroTime) / 1000 : 0;
         if (shouldPlay) {
             prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).apply();
+            android.util.Log.d("BootIntro", "wake intro: " + decision.reason
+                    + ", gap ok (" + elapsedSec + "s >= " + (gapMs / 1000) + "s)");
+            HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+            if (headerFocus != null) {
+                headerFocus.setSuppressed(true);
+            }
             triggerBootIntro(true, -1, null, false);
+        } else {
+            android.util.Log.d("BootIntro", "suppressed: " + decision.reason
+                    + ", gap not met (" + elapsedSec + "s < " + (gapMs / 1000) + "s)");
         }
     }
 
@@ -1166,6 +1249,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         userNavigatedDuringIntro = false;
         bootIntroOverlay.start(homeContent, grid, () -> {
             bootIntroOverlay = null;
+            BootIntro.clearDreamState();
+            getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE).edit()
+                    .putBoolean(BootIntro.KEY_PENDING_WAKE, false)
+                    .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, false)
+                    .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
+                    .apply();
             if (previewFromSettings) {
                 previewFromSettings = false;
                 Intent backIntent = new Intent(this, IntroSettingsActivity.class);
@@ -1258,6 +1347,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.hasExtra("test_wake_gap")) {
+            int gap = intent.getIntExtra("test_wake_gap", -1);
+            getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE)
+                    .edit().putInt(BootIntro.KEY_TEST_WAKE_GAP, gap).apply();
+        }
         if (intent != null && (ACTION_PREVIEW_INTRO.equals(intent.getAction()) || intent.getBooleanExtra("test_preview", false))) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
             triggerBootIntro(false, -1, null, true);
@@ -1561,7 +1655,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onStop() {
         super.onStop();
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        if (pm != null && !pm.isInteractive()) wasNonInteractive = true;
+        boolean nonInteractive = pm != null && !pm.isInteractive();
+        if (nonInteractive) wasNonInteractive = true;
+        SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
+        prefs.edit().putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
+                .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, nonInteractive)
+                .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, isDreaming)
+                .apply();
         started = false;
         unregisterReceiver(timeReceiver);
         clockRefresh.stop();
@@ -2968,6 +3068,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }
             }
         });
+        grid.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                grid.removeOnLayoutChangeListener(this);
+                if (pendingFocusScroll != null) {
+                    grid.removeOnScrollListener(pendingFocusScroll);
+                    pendingFocusScroll = null;
+                }
+                RecyclerView.ViewHolder h = grid.findViewHolderForAdapterPosition(pos);
+                if (h != null) {
+                    View card = h.itemView.findViewById(R.id.card);
+                    if (card != null) {
+                        card.requestFocus();
+                        onTileFocused(pos, card);
+                    }
+                }
+            }
+        });
     }
 
     private void focusFirstDockTile() {
@@ -2977,9 +3096,33 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         userNavigatedDuringIntro = false;
 
+        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        if (headerFocus != null) {
+            headerFocus.setSuppressed(false);
+            headerFocus.reset();
+        }
+
         if (adapter == null || adapter.appCount() == 0) {
             if (adapter != null && adapter.isLibraryAt(0)) focusLibrary();
-            else {
+            else if (adapter != null) {
+                adapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
+                    @Override
+                    public void onChanged() {
+                        if (adapter != null && adapter.appCount() > 0) {
+                            adapter.unregisterAdapterDataObserver(this);
+                            focusFirstDockTile();
+                        }
+                    }
+
+                    @Override
+                    public void onItemRangeInserted(int positionStart, int itemCount) {
+                        if (adapter != null && adapter.appCount() > 0) {
+                            adapter.unregisterAdapterDataObserver(this);
+                            focusFirstDockTile();
+                        }
+                    }
+                });
+            } else {
                 View top = firstTopButton();
                 if (top != null) top.requestFocus();
             }
@@ -2996,6 +3139,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (card != null) {
                 card.requestFocus();
                 onTileFocused(pos, card);
+                if (headerFocus != null) headerFocus.reset();
                 return;
             }
         }
@@ -3008,6 +3152,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (card != null) {
                     card.requestFocus();
                     onTileFocused(pos, card);
+                    if (headerFocus != null) headerFocus.reset();
                     return;
                 }
             } else if (grid.getChildCount() > 0) {
@@ -3016,6 +3161,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (card != null) {
                     card.requestFocus();
                     onTileFocused(pos, card);
+                    if (headerFocus != null) headerFocus.reset();
                     return;
                 }
             }
@@ -3031,6 +3177,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         if (target != null) {
                             target.requestFocus();
                             onTileFocused(pos, target);
+                            if (headerFocus != null) headerFocus.reset();
                         }
                     } else if (grid.getChildCount() > 0) {
                         View first = grid.getChildAt(0);
@@ -3038,6 +3185,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         if (target != null) {
                             target.requestFocus();
                             onTileFocused(pos, target);
+                            if (headerFocus != null) headerFocus.reset();
                         }
                     }
                 }
@@ -3646,6 +3794,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         try {
             if (getPackageManager().resolveActivity(i, 0) != null) {
+                setAppLaunched(true);
                 startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 return;
             }
@@ -3656,6 +3805,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void open(Intent i) {
+        setAppLaunched(true);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             startActivity(i);
@@ -3697,6 +3847,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Integer source = mappedSource(sourceId);
         if (source != null && source >= 0 && !inputAction.isEmpty()) {
             try {
+                setAppLaunched(true);
                 startActivity(inputActionIntent().putExtra("input", source.intValue())
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 return;
@@ -3708,6 +3859,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // ExternalSourceActivity). Its firmware answers the standard channel URI with "unsupported", so the
             // row goes straight there; the picker is the overlay the remote's Source button opens.
             try {
+                setAppLaunched(true);
                 startActivity(inputActionIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 return;
             } catch (ActivityNotFoundException | SecurityException e) {
@@ -3723,12 +3875,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // channel URI too, and with two or more handlers Android shows a chooser instead of the input (WhaleOS).
         if (!liveTvPkg.isEmpty()) {
             try {
+                setAppLaunched(true);
                 startActivity(new Intent(view).setPackage(liveTvPkg));
                 return;
             } catch (ActivityNotFoundException | SecurityException ignored) {
             }
         }
         try {
+            setAppLaunched(true);
             startActivity(view);
             return;
         } catch (ActivityNotFoundException | SecurityException e) {

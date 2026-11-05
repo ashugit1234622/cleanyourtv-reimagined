@@ -210,7 +210,7 @@ public final class IntroSettings {
         for (int gap : WAKE_GAPS) {
             if (gap == minutes) return true;
         }
-        return minutes > 0;
+        return false;
     }
 
     public static boolean isValidHoldMs(int ms) {

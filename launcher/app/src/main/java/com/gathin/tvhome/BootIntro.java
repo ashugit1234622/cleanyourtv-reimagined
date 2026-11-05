@@ -16,6 +16,14 @@ final class BootIntro {
     static final String KEY_LAST_BOOT = "last_boot_count";
     static final String KEY_LAST_INTRO_TIME = "last_intro_time";
     static final String KEY_LAST_MESSAGE_INDEX = "last_message_index";
+    static final String KEY_PENDING_WAKE = "wake_pending";
+    static final String KEY_WAKE_REASON = "wake_reason";
+    static final String KEY_DREAMING_PERSISTED = "dreaming_persisted";
+    static final String KEY_SCREEN_OFF_PERSISTED = "screen_off_persisted";
+    static final String KEY_APP_LAUNCHED = "app_launched_persisted";
+    static final String KEY_LAST_STOP_TIME = "last_stop_time";
+    static final String KEY_WAS_NON_INTERACTIVE = "was_non_interactive";
+    static final String KEY_TEST_WAKE_GAP = "test_wake_gap";
 
     static final String EXTRA_TEST = "test_boot_intro";
     static final String EXTRA_TEST_MESSAGE = "test_message";
@@ -52,6 +60,63 @@ final class BootIntro {
 
     static boolean isDreaming() {
         return dreaming;
+    }
+
+    static void clearDreamState() {
+        dreaming = false;
+        dreamEnded = false;
+    }
+
+    static final class WakeDecision {
+        final boolean woke;
+        final String reason;
+
+        WakeDecision(boolean woke, String reason) {
+            this.woke = woke;
+            this.reason = reason;
+        }
+    }
+
+    /**
+     * Combines all independent wake signals with an OR:
+     * (was dreaming) OR (screen was off) OR (PowerManager.isInteractive was false at last stop)
+     * OR (launcher was stopped for longer than the wake gap WITHOUT any launcher-initiated app launch).
+     * Normal returns from an app launched by the launcher are suppressed.
+     */
+    static WakeDecision evaluateWakeState(
+            boolean isDreaming,
+            boolean wasNonInteractive,
+            boolean screenWokeUp,
+            boolean dreamEnded,
+            boolean persistedPendingWake,
+            boolean persistedDreaming,
+            boolean persistedScreenOff,
+            boolean persistedNonInteractive,
+            boolean appLaunched,
+            long stoppedDurationMs,
+            long gapMs) {
+        if (appLaunched) {
+            return new WakeDecision(false, "app_return");
+        }
+        if (isDreaming || persistedDreaming) {
+            return new WakeDecision(true, "dreaming");
+        }
+        if (dreamEnded) {
+            return new WakeDecision(true, "dream_ended");
+        }
+        if (screenWokeUp || persistedScreenOff) {
+            return new WakeDecision(true, "screen_off_or_wake");
+        }
+        if (wasNonInteractive || persistedNonInteractive) {
+            return new WakeDecision(true, "non_interactive_at_stop");
+        }
+        if (persistedPendingWake) {
+            return new WakeDecision(true, "pending_wake_persisted");
+        }
+        if (stoppedDurationMs >= gapMs && gapMs > 0) {
+            return new WakeDecision(true, "idle_duration_exceeded");
+        }
+        return new WakeDecision(false, "normal_home");
     }
 
     static final class IntroMessage {
@@ -108,12 +173,14 @@ final class BootIntro {
     /**
      * Whether the intro should play on wake from sleep or screensaver:
      * - requires introOnWake enabled and reducedMotion disabled.
-     * - requires either first wake (lastWakeMs <= 0) or gap elapsed >= minGapMinutes.
+     * - requires either first wake (lastWakeMs <= 0), reboot detected (nowMs < lastWakeMs),
+     *   or gap elapsed >= minGapMinutes.
      */
     static boolean shouldPlayOnWake(boolean introOnWake, boolean reducedMotion,
                                    int minGapMinutes, long lastWakeMs, long nowMs) {
         if (!introOnWake || reducedMotion) return false;
-        if (lastWakeMs <= 0) return true;
+        if (minGapMinutes <= 0) return true;
+        if (lastWakeMs <= 0 || nowMs < lastWakeMs) return true;
         long gapMs = (long) minGapMinutes * 60 * 1000L;
         return (nowMs - lastWakeMs) >= gapMs;
     }
