@@ -28,6 +28,7 @@ import java.util.Set;
 public final class QuickSettingsActivity extends Activity {
     private static final String CACHE_PREFS = "quick_settings_cache";
     private static ClassLoader sMitvClassLoader;
+    private QuickSettingsFocusIndicator focusIndicator;
 
     private ClassLoader getMitvClassLoader() {
         if (sMitvClassLoader == null) {
@@ -77,6 +78,7 @@ public final class QuickSettingsActivity extends Activity {
         scrim.setOnClickListener(v -> finish());
         scrim.setFocusable(false);
         scrim.setFocusableInTouchMode(false);
+        focusIndicator = findViewById(R.id.focusIndicator);
         buildRows();
     }
 
@@ -89,6 +91,7 @@ public final class QuickSettingsActivity extends Activity {
     private void buildRows() {
         LinearLayout rows = findViewById(R.id.rows);
         if (rows == null) return;
+        if (focusIndicator != null) focusIndicator.reset();
         rows.removeAllViews();
 
         String picTitle = getPictureModeTitle();
@@ -146,6 +149,11 @@ public final class QuickSettingsActivity extends Activity {
                 Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
             }
             finish();
+        });
+        row.setOnFocusChangeListener((v, focused) -> {
+            if (focused && focusIndicator != null) {
+                focusIndicator.onRowFocused(v);
+            }
         });
         rows.addView(row);
     }

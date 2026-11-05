@@ -9,7 +9,7 @@
     android:focusableInTouchMode="false"
     android:descendantFocusability="afterDescendants">
 
-    <LinearLayout
+    <RelativeLayout
         android:id="@+id/panel"
         android:layout_width="wrap_content"
         android:minWidth="220dp"
@@ -17,10 +17,21 @@
         android:layout_gravity="top|end"
         android:layout_marginTop="105dp"
         android:layout_marginEnd="56dp"
-        android:orientation="vertical"
         android:background="@drawable/glass_panel"
         android:padding="6dp"
-        android:elevation="12dp">
+        android:elevation="12dp"
+        android:clipChildren="false">
+
+        <com.gathin.tvhome.QuickSettingsFocusIndicator
+            android:id="@+id/focusIndicator"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_alignStart="@id/rows"
+            android:layout_alignEnd="@id/rows"
+            android:layout_alignTop="@id/rows"
+            android:layout_alignBottom="@id/rows"
+            android:clipChildren="false"
+            android:focusable="false" />
 
         <LinearLayout
             android:id="@+id/rows"
@@ -30,5 +41,5 @@
             android:orientation="vertical"
             android:focusable="false"
             android:descendantFocusability="afterDescendants" />
-    </LinearLayout>
+    </RelativeLayout>
 </FrameLayout>
