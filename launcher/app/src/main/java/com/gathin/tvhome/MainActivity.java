@@ -468,6 +468,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // restore_key_services: after a force stop, put back the remote's accessibility helpers that Android took
         // off the list (needs WRITE_SECURE_SETTINGS, granted by build-and-install with RESTORE_KEY_SERVICES=1).
         if (cfg.restoreKeyServices) ServiceRepair.restore(this);
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION}, 102);
+        }
         settingsRevision = settingsRevision();
         applyViewInputsHandler(cfg.handleViewInputs);
         settingsKeycodes = cfg.settingsKeycodes;
@@ -1386,6 +1389,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cm != null) {
             cm.unregisterNetworkCallback(networkCallback);
             cm.unregisterNetworkCallback(vpnCallback);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 102) {
+            updateWifiLabel();
         }
     }
 
@@ -2935,6 +2946,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         try {
             ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
             boolean wifi = false, ethernet = false;
+            Network wifiNet = null;
             // All networks, not just the active one: with a VPN up the active network is the VPN itself.
             for (Network net : cm != null ? cm.getAllNetworks() : new Network[0]) {
                 NetworkCapabilities caps = cm.getNetworkCapabilities(net);
@@ -2948,7 +2960,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // Android reached the internet through it; a captive portal stays unvalidated until login.
                 if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) validated = true;
                 if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) ethernet = true;
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) wifi = true;
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    wifi = true;
+                    wifiNet = net;
+                }
             }
             if (!online) {
                 text = getString(R.string.offline);
@@ -2962,6 +2977,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
                 WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
                 String ssid = info != null ? info.getSSID() : null;
+                if ((ssid == null || ssid.isEmpty() || ssid.contains("unknown") || ssid.equals("0x"))
+                        && android.os.Build.VERSION.SDK_INT >= 29 && wifiNet != null) {
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(wifiNet);
+                    if (caps != null && caps.getTransportInfo() instanceof WifiInfo) {
+                        info = (WifiInfo) caps.getTransportInfo();
+                        ssid = info.getSSID();
+                    }
+                }
                 flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
                 if (ssid != null) {
                     ssid = ssid.replace("\"", "").trim();
