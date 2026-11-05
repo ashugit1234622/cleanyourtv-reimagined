@@ -1,0 +1,10 @@
+﻿{
+  "ambient_glow": false,
+  "app_glow": false,
+  "wallpaper": true,
+  "wallpaper_rotation_minutes": 60,
+  "wallpaper_playback": "shuffle",
+  "wallpaper_dim": 15,
+  "dock_opacity": 75,
+  "clock_wallpaper": true
+}
