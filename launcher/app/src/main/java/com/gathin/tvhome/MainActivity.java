@@ -919,21 +919,44 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnReorder.setOnKeyListener(pillKeys);
         btnLibraryTop.setOnKeyListener(pillKeys);
         for (View button : topAppButtons) button.setOnKeyListener(pillKeys);
-        if (advancedEffects) {
-            List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings));
-            pills.addAll(topAppButtons);
-            for (View button : pills) {
-                button.setOnFocusChangeListener((view, focused) -> view.animate()
-                        .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
-                        .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start());
-            }
+        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        if (headerFocus != null) {
+            headerFocus.setReducedMotion(reducedMotion);
+        }
+
+        List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings));
+        pills.addAll(topAppButtons);
+        for (View button : pills) {
+            button.setOnFocusChangeListener((view, focused) -> {
+                if (advancedEffects) {
+                    view.animate()
+                            .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
+                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start();
+                }
+                if (headerFocus != null) {
+                    if (focused) {
+                        headerFocus.onButtonFocused(view);
+                    }
+                }
+            });
         }
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
 
-        // Hide the glass when focus leaves the tiles.
+        // Hide the glass when focus leaves the tiles, and hide header focus when leaving top bar.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
             boolean onTile = newF != null && newF.getId() == R.id.card;
             if (!onTile) hideGlass();
+
+            boolean onTopBar = newF != null && (newF == btnInputs
+                    || newF == btnWifi
+                    || newF == btnVpn
+                    || newF == btnReorder
+                    || newF == btnLibraryTop
+                    || newF == btnSettings
+                    || (newF.getParent() != null && newF.getParent() == findViewById(R.id.topButtons)));
+            if (!onTopBar && headerFocus != null) {
+                headerFocus.onFocusLost();
+            }
         });
 
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);

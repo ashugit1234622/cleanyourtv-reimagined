@@ -341,6 +341,15 @@
                 android:focusable="false"
                 android:visibility="gone" />
 
+            <com.gathin.tvhome.HeaderFocusIndicator
+                android:id="@+id/headerFocusIndicator"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_alignTop="@id/leftBlock"
+                android:layout_alignBottom="@id/topButtons"
+                android:clipChildren="false"
+                android:focusable="false" />
+
             <LinearLayout
                 android:id="@+id/topButtons"
                 android:layout_width="wrap_content"
