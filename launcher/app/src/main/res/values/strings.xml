@@ -68,7 +68,8 @@
     <string name="follow_theme_hint">Uses the current theme or built-in layout and motion settings. Pushing or resetting a theme also clears your on-TV choices.</string>
     <string name="tv_settings">TV system settings</string>
     <string name="quick_picture">Display</string>
-    <string name="quick_network">Network</string>
+    <string name="quick_sound">Sound &amp; Audio</string>
+    <string name="quick_network">Network &amp; Wi-Fi</string>
     <string name="quick_apps">Apps</string>
     <string name="quick_apps_hint">Re-enable</string>
     <string name="on">On</string>

@@ -38,6 +38,16 @@ final class SystemSettings {
     private static final ComponentName AOSP_TV_SETTINGS =
             new ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings");
 
+    /** Opens Google TV's Quick Settings side panel (DashboardHandler) if available, else standard settings. */
+    static Intent quickSettingsIntent(Context context) {
+        PackageManager pm = context.getPackageManager();
+        Intent panel = new Intent("android.app.action.OPEN_NOTIFICATION_HANDLER_PANEL");
+        if (pm.resolveActivity(panel, 0) != null) return panel;
+        Intent toggle = new Intent("android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL");
+        if (pm.resolveActivity(toggle, 0) != null) return toggle;
+        return intent(context, Settings.ACTION_SETTINGS);
+    }
+
     /** The first vendor settings entry from settings_fallback_components that is installed, or null
      *  when none is. China-market firmware keeps pages the AOSP TV settings has no row for -
      *  Xiaomi's Account & Security, where the ADB switch lives - in the vendor's own settings app;

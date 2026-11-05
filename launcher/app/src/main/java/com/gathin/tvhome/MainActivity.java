@@ -829,7 +829,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setOnClickListener(v -> {
             if (launcherSettingsButton) startActivityForResult(
                     new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
+            else open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class) : SystemSettings.quickSettingsIntent(this));
         });
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
@@ -1394,11 +1394,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * nothing even on Home.
      */
     private boolean handleSettingsKey(KeyEvent event) {
-        for (int code : settingsKeycodes) {
-            if (event.getKeyCode() != code) continue;
+        boolean isSettings = event.getKeyCode() == KeyEvent.KEYCODE_SETTINGS;
+        if (!isSettings) {
+            for (int code : settingsKeycodes) {
+                if (event.getKeyCode() == code) {
+                    isSettings = true;
+                    break;
+                }
+            }
+        }
+        if (isSettings) {
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                 open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class)
-                        : systemIntent(Settings.ACTION_SETTINGS));
+                        : SystemSettings.quickSettingsIntent(this));
             }
             return true;
         }

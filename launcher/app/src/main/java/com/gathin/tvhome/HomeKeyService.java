@@ -267,7 +267,7 @@ public class HomeKeyService extends AccessibilityService {
         if (isSettingsKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                 Intent open = settingsPanel ? new Intent(this, QuickSettingsActivity.class)
-                        : SystemSettings.intent(this, Settings.ACTION_SETTINGS);
+                        : SystemSettings.quickSettingsIntent(this);
                 try {
                     startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 } catch (ActivityNotFoundException | SecurityException unavailable) {
@@ -321,7 +321,17 @@ public class HomeKeyService extends AccessibilityService {
         }
         // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up.
         CharSequence cls = event.getClassName();
-        if (!stockHome.isEmpty() && cls != null && stockHome.contains(cls.toString())) openHome();
+        CharSequence pkg = event.getPackageName();
+        if (!stockHome.isEmpty() || !stockHomePackage.isEmpty()) {
+            if (cls != null && stockHome.contains(cls.toString())) {
+                openHome();
+            } else if (pkg != null && stockHomePackage.contentEquals(pkg)) {
+                String c = cls != null ? cls.toString() : "";
+                if (!c.contains("Dashboard") && !c.contains("Settings") && !c.contains("Panel")) {
+                    openHome();
+                }
+            }
+        }
     }
 
     /** How long power_on_home stays armed after the screen turns on without a reboot. */
