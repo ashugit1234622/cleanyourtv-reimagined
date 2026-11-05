@@ -70,6 +70,7 @@
     <string name="quick_picture">Display</string>
     <string name="quick_sound">Sound &amp; Audio</string>
     <string name="quick_network">Network &amp; Wi-Fi</string>
+    <string name="quick_bluetooth">Bluetooth</string>
     <string name="quick_apps">Apps</string>
     <string name="quick_apps_hint">Re-enable</string>
     <string name="on">On</string>

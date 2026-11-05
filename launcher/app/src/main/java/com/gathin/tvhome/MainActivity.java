@@ -3683,6 +3683,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             status.setText(network);
             status.setVisibility(View.VISIBLE);
         }
+        addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1,
+                () -> open(SystemSettings.bluetoothSettingsIntent(this)));
         addInputRow(rows, popup, R.drawable.ic_swap_vert, getString(R.string.reorder), -1, this::toggleReorder);
         if (launcherSettingsButton) {
             addInputRow(rows, popup, R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), -1,

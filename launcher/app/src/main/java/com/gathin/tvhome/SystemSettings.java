@@ -48,6 +48,27 @@ final class SystemSettings {
         return intent(context, Settings.ACTION_SETTINGS);
     }
 
+    /** Opens Android TV Remotes and accessories / Bluetooth settings screen. */
+    static Intent bluetoothSettingsIntent(Context context) {
+        PackageManager pm = context.getPackageManager();
+        Intent sliceIntent = new Intent("android.settings.SLICE_SETTINGS")
+                .putExtra("slice_uri", "content://com.android.tv.settings.accessories.sliceprovider/general");
+        if (pm.resolveActivity(sliceIntent, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+            return sliceIntent;
+        }
+        ComponentName sliceComp = new ComponentName("com.android.tv.settings", "com.android.tv.settings.slice.SliceActivity");
+        try {
+            pm.getActivityInfo(sliceComp, 0);
+            return new Intent().setComponent(sliceComp)
+                    .putExtra("slice_uri", "content://com.android.tv.settings.accessories.sliceprovider/general");
+        } catch (PackageManager.NameNotFoundException ignored) {}
+        Intent connectInput = new Intent("com.google.android.intent.action.CONNECT_INPUT");
+        if (pm.resolveActivity(connectInput, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+            return connectInput;
+        }
+        return intent(context, Settings.ACTION_BLUETOOTH_SETTINGS);
+    }
+
     /** The first vendor settings entry from settings_fallback_components that is installed, or null
      *  when none is. China-market firmware keeps pages the AOSP TV settings has no row for -
      *  Xiaomi's Account & Security, where the ADB switch lives - in the vendor's own settings app;
