@@ -7,6 +7,10 @@
   "wallpaper_dim": 15,
   "dock_opacity": 75,
   "clock_wallpaper": true,
+  "hidden_apps": [
+    "com.netflix.ninja",
+    "com.netflix.tokenmanager"
+  ],
   "weatherstack_api_key": "YOUR_WEATHERSTACK_API_KEY_HERE",
   "weather_location": "18.748060,73.407219"
 }
