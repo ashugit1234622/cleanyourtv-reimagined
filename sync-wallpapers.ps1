@@ -18,3 +18,4 @@ adb -s $TvHost push "$wallpapersDir\*.*" /sdcard/Android/data/com.gathin.tvhome/
 Write-Host "Restarting CleanYourTV to reload wallpapers..."
 adb -s $TvHost shell "am force-stop com.gathin.tvhome; input keyevent 3"
 Write-Host "Wallpapers synced successfully! Rotation is set to 60 minutes."
+

@@ -1,4 +1,4 @@
-﻿{
+{
   "ambient_glow": false,
   "app_glow": false,
   "wallpaper": true,
@@ -6,5 +6,7 @@
   "wallpaper_playback": "shuffle",
   "wallpaper_dim": 15,
   "dock_opacity": 75,
-  "clock_wallpaper": true
+  "clock_wallpaper": true,
+  "weatherstack_api_key": "YOUR_WEATHERSTACK_API_KEY_HERE",
+  "weather_location": "18.748060,73.407219"
 }
