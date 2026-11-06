@@ -3,7 +3,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FF101419"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -12,7 +13,7 @@
         android:paddingStart="72dp"
         android:paddingEnd="72dp"
         android:paddingTop="38dp"
-        android:paddingBottom="38dp">
+        android:paddingBottom="64dp">
 
         <TextView
             android:layout_width="match_parent"
@@ -27,44 +28,100 @@
             android:layout_marginTop="28dp" />
 
         <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_boot_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
+
+        <TextView
             android:id="@+id/introReducedMotionNote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="@string/intro_reduced_motion_note"
             android:textColor="#FFACB8C1"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:visibility="gone" />
 
         <TextView
             android:id="@+id/introWakeChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_wake_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introWakeGapChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_wake_gap_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introHoldChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_hold_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introSpeedChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_speed_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introAnimationChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_animation_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introMessagesChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp" />
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/intro_messages_help"
+            android:textColor="#FF8A96A0"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/introPreviewChoice"
@@ -75,7 +132,7 @@
         <TextView
             android:id="@+id/introResetChoice"
             style="@style/SettingsRow"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="12dp"
             android:text="@string/intro_reset_defaults" />
 
     </LinearLayout>

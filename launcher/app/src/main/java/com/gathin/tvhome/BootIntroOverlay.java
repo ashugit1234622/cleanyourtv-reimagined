@@ -12,6 +12,7 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
@@ -27,11 +28,12 @@ import java.util.Random;
  * Sequence:
  * 1. Centered message (title and optional subtitle) in Outfit font animates in using one of 5 styles
  *    (pop, fade, slide, letters, shimmer) over ~550ms.
- * 2. Holds steady and readable for boot_intro_hold_ms (~2000ms).
- * 3. Reveals the home screen via a hardware-accelerated circular reveal from the center over 600ms,
+ * 2. Holds steady and readable for boot_intro_hold_ms (Auto = 2500ms..4500ms, or chosen 1.5s..5.0s).
+ *    Counted from the exact moment the last text element reaches full visibility, measured in real elapsed time.
+ * 3. Reveals the home screen via a hardware-accelerated circular reveal from the center over ~600ms,
  *    simultaneously scaling home content from 1.06 to 1.0 and fading it in.
- * 4. Slides the dock grid up slightly (24dp -> 0dp) over 350ms.
- * Total time: ~3.5s (capped at 5.0s). Any key press skips the intro immediately.
+ * 4. Slides the dock grid up slightly (24dp -> 0dp) over ~350ms.
+ * Total time: capped at 7.0s. Any key press skips the intro immediately.
  */
 final class BootIntroOverlay extends View {
     static final String ANIM_RANDOM = "random";
@@ -40,6 +42,10 @@ final class BootIntroOverlay extends View {
     static final String ANIM_SLIDE = "slide";
     static final String ANIM_LETTERS = "letters";
     static final String ANIM_SHIMMER = "shimmer";
+
+    public interface OnRevealListener {
+        void onRevealStart();
+    }
 
     private final Paint bgPaint = new Paint();
     private final Paint titlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -52,7 +58,11 @@ final class BootIntroOverlay extends View {
     private String title = "Welcome";
     private String subtitle = "";
     private String animStyle = ANIM_FADE;
-    private int holdMs = BootIntro.DEFAULT_HOLD_MS;
+    private int holdMs = 2500;
+    private int effectiveHoldMs = 2500;
+    private long holdStartRealtime = 0;
+    private boolean textFullyVisible = false;
+
     private long entranceDurationMs = 550;
     private long revealDurationMs = 600;
     private long dockDurationMs = 350;
@@ -95,6 +105,7 @@ final class BootIntroOverlay extends View {
     private ValueAnimator shimmerAnim;
     private ValueAnimator revealAnim;
     private Runnable onComplete;
+    private OnRevealListener onRevealListener;
     private View homeContent;
     private View dockGrid;
 
@@ -124,9 +135,13 @@ final class BootIntroOverlay extends View {
         setClickable(false);
     }
 
+    public void setOnRevealListener(OnRevealListener listener) {
+        this.onRevealListener = listener;
+    }
+
     public void setIntroSettings(IntroSettings settings, String title, String subtitle, String animStyle) {
         if (settings != null) {
-            if (IntroSettings.MESSAGES_OFF.equals(settings.messagesMode)) {
+            if (IntroSettings.MESSAGES_OFF.equals(settings.messagesMode) && (title == null || title.isEmpty())) {
                 this.title = "";
                 this.subtitle = "";
                 this.suppressMessages = true;
@@ -144,8 +159,10 @@ final class BootIntroOverlay extends View {
                 this.suppressMessages = false;
             }
 
+            this.holdMs = settings.holdMs;
+            this.effectiveHoldMs = IntroSettings.computeHoldMs(settings.holdMs, this.title, this.subtitle);
+
             if (settings.durations != null) {
-                this.holdMs = settings.durations.holdMs;
                 this.entranceDurationMs = settings.durations.entranceMs;
                 this.revealDurationMs = settings.durations.revealMs;
                 this.dockDurationMs = settings.durations.dockMs;
@@ -153,6 +170,7 @@ final class BootIntroOverlay extends View {
         } else {
             if (title != null && !title.trim().isEmpty()) this.title = title.trim();
             this.subtitle = subtitle != null ? subtitle.trim() : "";
+            this.effectiveHoldMs = IntroSettings.computeHoldMs(this.holdMs, this.title, this.subtitle);
         }
 
         if (animStyle == null || ANIM_RANDOM.equalsIgnoreCase(animStyle.trim())) {
@@ -188,7 +206,8 @@ final class BootIntroOverlay extends View {
             }
         }
 
-        this.holdMs = Math.max(200, Math.min(3500, holdMs));
+        this.holdMs = holdMs;
+        this.effectiveHoldMs = IntroSettings.computeHoldMs(holdMs, this.title, this.subtitle);
     }
 
     /** Starts the intro sequence over the supplied home content and dock. */
@@ -198,6 +217,8 @@ final class BootIntroOverlay extends View {
         this.onComplete = completeCallback;
         this.playing = true;
         this.revealing = false;
+        this.textFullyVisible = false;
+        this.holdStartRealtime = 0;
 
         float density = getResources().getDisplayMetrics().density;
         if (homeContent != null) {
@@ -257,7 +278,6 @@ final class BootIntroOverlay extends View {
 
         Paint.FontMetrics tfm = titlePaint.getFontMetrics();
         float titleCenterOffset = (tfm.ascent + tfm.descent) / 2f;
-
         if (hasSubtitle) {
             titleY = cy - titleCenterOffset - (16f * density);
             Paint.FontMetrics sfm = subtitlePaint.getFontMetrics();
@@ -302,8 +322,42 @@ final class BootIntroOverlay extends View {
         }
     }
 
+    private void onTextFullyVisible() {
+        if (textFullyVisible || !playing || revealing) return;
+        textFullyVisible = true;
+        holdStartRealtime = SystemClock.elapsedRealtime();
+        android.util.Log.d("BootIntro", "text fully visible, hold: " + effectiveHoldMs + "ms (t=" + holdStartRealtime + ")");
+        scheduleRevealAfterHold();
+    }
+
+    private void scheduleRevealAfterHold() {
+        if (!playing || revealing) return;
+        long elapsed = SystemClock.elapsedRealtime() - holdStartRealtime;
+        long remaining = effectiveHoldMs - elapsed;
+        if (remaining <= 0) {
+            startRevealAnimation();
+        } else {
+            postDelayed(() -> {
+                if (playing && !revealing) {
+                    long el = SystemClock.elapsedRealtime() - holdStartRealtime;
+                    if (el >= effectiveHoldMs) {
+                        startRevealAnimation();
+                    } else {
+                        scheduleRevealAfterHold();
+                    }
+                }
+            }, Math.max(16, remaining));
+        }
+    }
+
     private void startEntranceAnimation() {
         float density = getResources().getDisplayMetrics().density;
+        boolean hasSubtitle = !subtitle.isEmpty() && !suppressMessages;
+
+        if (suppressMessages || title.isEmpty()) {
+            onTextFullyVisible();
+            return;
+        }
 
         if (ANIM_POP.equals(animStyle)) {
             introAnim = ValueAnimator.ofFloat(0f, 1f);
@@ -354,7 +408,7 @@ final class BootIntroOverlay extends View {
                 }
             });
         } else {
-            // Default "fade" (matches previous behavior)
+            // Default "fade"
             introAnim = ValueAnimator.ofFloat(0f, 1f);
             introAnim.setDuration(entranceDurationMs);
             introAnim.setInterpolator(new DecelerateInterpolator(1.4f));
@@ -367,7 +421,7 @@ final class BootIntroOverlay extends View {
         }
 
         // Subtitle entrance: starts ~250ms after title with small slide-up and fade
-        if (!subtitle.isEmpty() && !suppressMessages) {
+        if (hasSubtitle) {
             subtitleAnim = ValueAnimator.ofFloat(0f, 1f);
             subtitleAnim.setStartDelay((long) (entranceDurationMs * 0.45f));
             subtitleAnim.setDuration((long) (entranceDurationMs * 0.8f));
@@ -378,17 +432,21 @@ final class BootIntroOverlay extends View {
                 subtitleTranslateY = (1f - val) * 12f * density;
                 invalidate();
             });
+            subtitleAnim.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    onTextFullyVisible();
+                }
+            });
             subtitleAnim.start();
         }
 
         introAnim.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                if (!playing) return;
-                // Hold steady for holdMs, then reveal
-                postDelayed(() -> {
-                    if (playing && !revealing) startRevealAnimation();
-                }, holdMs);
+                if (!hasSubtitle) {
+                    onTextFullyVisible();
+                }
             }
         });
         introAnim.start();
@@ -419,6 +477,14 @@ final class BootIntroOverlay extends View {
 
     private void startRevealAnimation() {
         revealing = true;
+        long now = SystemClock.elapsedRealtime();
+        long actualHold = (holdStartRealtime > 0) ? (now - holdStartRealtime) : 0;
+        android.util.Log.d("BootIntro", "reveal start, hold elapsed: " + actualHold + "ms (target: " + effectiveHoldMs + "ms)");
+
+        if (onRevealListener != null) {
+            onRevealListener.onRevealStart();
+        }
+
         revealAnim = ValueAnimator.ofFloat(0f, 1f);
         revealAnim.setDuration(revealDurationMs);
         revealAnim.setInterpolator(new AccelerateDecelerateInterpolator());
@@ -487,6 +553,10 @@ final class BootIntroOverlay extends View {
         if (!playing) return;
         playing = false;
         revealing = false;
+
+        if (onRevealListener != null) {
+            onRevealListener.onRevealStart();
+        }
 
         removeCallbacks(null);
         if (introAnim != null) introAnim.cancel();

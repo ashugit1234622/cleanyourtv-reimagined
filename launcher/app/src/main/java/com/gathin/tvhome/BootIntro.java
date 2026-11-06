@@ -30,8 +30,8 @@ final class BootIntro {
     static final String EXTRA_TEST_ANIMATION = "test_animation";
     static final String EXTRA_TEST_WAKE = "test_wake";
 
-    static final int MAX_DURATION_MS = 5000;
-    static final int DEFAULT_HOLD_MS = 2000;
+    static final int MAX_DURATION_MS = 7000;
+    static final int DEFAULT_HOLD_MS = 2500;
 
     private static volatile boolean dreamEnded = false;
     private static volatile boolean dreaming = false;
@@ -174,15 +174,29 @@ final class BootIntro {
      * Whether the intro should play on wake from sleep or screensaver:
      * - requires introOnWake enabled and reducedMotion disabled.
      * - requires either first wake (lastWakeMs <= 0), reboot detected (nowMs < lastWakeMs),
-     *   or gap elapsed >= minGapMinutes.
+     *   gapMs <= 0 (Always), or gap elapsed >= gapMs.
      */
+    static boolean shouldPlayOnWakeMs(boolean introOnWake, boolean reducedMotion,
+                                     long gapMs, long lastWakeMs, long nowMs) {
+        if (!introOnWake || reducedMotion) return false;
+        if (gapMs <= 0) return true;
+        if (lastWakeMs <= 0 || nowMs < lastWakeMs) return true;
+        return (nowMs - lastWakeMs) >= gapMs;
+    }
+
     static boolean shouldPlayOnWake(boolean introOnWake, boolean reducedMotion,
                                    int minGapMinutes, long lastWakeMs, long nowMs) {
-        if (!introOnWake || reducedMotion) return false;
-        if (minGapMinutes <= 0) return true;
-        if (lastWakeMs <= 0 || nowMs < lastWakeMs) return true;
-        long gapMs = (long) minGapMinutes * 60 * 1000L;
-        return (nowMs - lastWakeMs) >= gapMs;
+        return shouldPlayOnWakeMs(introOnWake, reducedMotion, (long) minGapMinutes * 60 * 1000L, lastWakeMs, nowMs);
+    }
+
+    /**
+     * Evaluates whether the sleep/away duration meets the wake gap.
+     * gapMs <= 0 means Always (every wake plays).
+     */
+    static boolean isWakeGapMet(long gapMs, long stoppedDurationMs, long lastStopTime, long nowMs) {
+        if (gapMs <= 0) return true; // Always (no minimum sleep required)
+        if (lastStopTime <= 0 || nowMs < lastStopTime) return true; // first run or reboot occurred
+        return stoppedDurationMs >= gapMs;
     }
 
     /**

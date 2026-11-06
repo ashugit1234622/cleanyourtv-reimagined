@@ -57,8 +57,8 @@
          Default 5 minutes. -->
     <integer name="intro_wake_min_gap_minutes">5</integer>
 
-    <!-- Hold duration in milliseconds for the boot/wake intro message (boot_intro_hold_ms). Default 2000ms. -->
-    <integer name="boot_intro_hold_ms">2000</integer>
+    <!-- Hold duration in milliseconds for the boot/wake intro message (boot_intro_hold_ms). 0 = Auto. -->
+    <integer name="boot_intro_hold_ms">0</integer>
 
     <!-- Playback speed for boot intro entrance, reveal, and dock animations (boot_intro_speed): slow, normal, fast. Default normal. -->
     <string name="boot_intro_speed" translatable="false">normal</string>

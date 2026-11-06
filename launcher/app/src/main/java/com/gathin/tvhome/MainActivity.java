@@ -274,6 +274,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean isDreaming = false;
     private boolean launcherAppLaunched = false;
     private boolean userNavigatedDuringIntro = false;
+    private boolean deferReloadAppsUntilReveal = false;
+    private boolean deferredReloadAnimate = false;
+    private boolean deferredReloadRebuild = false;
+    private boolean deferredReloadEntrance = false;
+    private long lastIntroTriggerTime = 0;
+    private long introStartTime = 0;
 
     private void setAppLaunched(boolean launched) {
         launcherAppLaunched = launched;
@@ -294,7 +300,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 prefs.edit().putBoolean(BootIntro.KEY_DREAMING_PERSISTED, true)
                         .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
                         .putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
-                        .apply();
+                        .commit();
             } else if (Intent.ACTION_SCREEN_ON.equals(action)
                     || Intent.ACTION_USER_PRESENT.equals(action)
                     || "android.intent.action.DREAMING_STOPPED".equals(action)) {
@@ -303,13 +309,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, false)
                             .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, false)
                             .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
-                            .apply();
+                            .commit();
                     return;
                 }
                 screenWokeUp = true;
                 isDreaming = false;
                 BootIntro.notifyDreamEnded();
-                prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, true).apply();
+                prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, true).commit();
                 if (resumed && !stopped && (bootIntroOverlay == null || !bootIntroOverlay.isPlaying())) {
                     checkAndTriggerWakeIntro();
                 }
@@ -317,8 +323,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 wasNonInteractive = true;
                 prefs.edit().putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, true)
                         .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
+                        .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, true)
                         .putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
-                        .apply();
+                        .commit();
             }
         }
     };
@@ -1081,7 +1088,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         boolean isPreview = intent != null && (intent.getBooleanExtra("test_preview", false) || ACTION_PREVIEW_INTRO.equals(intent.getAction()));
         if (isPreview) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
-            triggerBootIntro(false, -1, null, true);
+            String forcedAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
+            triggerBootIntro(false, -1, forcedAnim, true);
             return;
         }
 
@@ -1093,9 +1101,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (BootIntro.shouldPlay(currentBoot, lastBoot, introSettings.bootIntro, cfg.reducedMotion, testBoot)) {
             if (currentBoot >= 0 && currentBoot != lastBoot) {
-                prefs.edit().putInt(BootIntro.KEY_LAST_BOOT, currentBoot).apply();
+                prefs.edit().putInt(BootIntro.KEY_LAST_BOOT, currentBoot).commit();
             }
-            prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, SystemClock.elapsedRealtime()).apply();
+            long now = SystemClock.elapsedRealtime();
+            prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).commit();
+            lastIntroTriggerTime = now;
+            deferReloadAppsUntilReveal = true;
             HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
             if (headerFocus != null) {
                 headerFocus.setSuppressed(true);
@@ -1109,6 +1120,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void checkAndTriggerWakeIntro() {
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) return;
 
+        long now = SystemClock.elapsedRealtime();
+        if (lastIntroTriggerTime > 0 && now - lastIntroTriggerTime < 3000L) {
+            android.util.Log.d("BootIntro", "wake intro debounced: duplicate broadcast within 3s ("
+                    + (now - lastIntroTriggerTime) + "ms)");
+            return;
+        }
+
         SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
         boolean persistedPendingWake = prefs.getBoolean(BootIntro.KEY_PENDING_WAKE, false);
         boolean persistedDreaming = prefs.getBoolean(BootIntro.KEY_DREAMING_PERSISTED, false);
@@ -1117,14 +1135,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         boolean appLaunched = launcherAppLaunched || prefs.getBoolean(BootIntro.KEY_APP_LAUNCHED, false);
 
         long lastStopTime = prefs.getLong(BootIntro.KEY_LAST_STOP_TIME, 0);
-        long now = SystemClock.elapsedRealtime();
         long stoppedDurationMs = (lastStopTime > 0 && now >= lastStopTime) ? (now - lastStopTime) : 0;
 
         Config cfg = Config.load(this);
         IntroSettings introSettings = IntroSettings.load(this, cfg);
         int testGap = prefs.getInt(BootIntro.KEY_TEST_WAKE_GAP, -1);
-        int effectiveGapMinutes = (testGap >= 0) ? testGap : introSettings.wakeGapMinutes;
-        long gapMs = (long) effectiveGapMinutes * 60 * 1000L;
+        long gapMs = (testGap >= 0) ? (testGap * 1000L) : introSettings.getWakeGapMs();
 
         boolean dreamRan = BootIntro.consumeDreamEnded();
 
@@ -1154,7 +1170,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
                 .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, false)
                 .putBoolean(BootIntro.KEY_APP_LAUNCHED, false)
-                .apply();
+                .commit();
 
         if (!decision.woke) {
             android.util.Log.d("BootIntro", "wake intro suppressed: " + decision.reason);
@@ -1167,29 +1183,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
 
-        long lastIntroTime = prefs.getLong(BootIntro.KEY_LAST_INTRO_TIME, 0);
-        boolean shouldPlay = BootIntro.shouldPlayOnWake(
-                introSettings.bootIntro && introSettings.introOnWake,
-                cfg.reducedMotion,
-                effectiveGapMinutes,
-                lastIntroTime,
-                now
-        );
-
-        long elapsedSec = (lastIntroTime > 0 && now >= lastIntroTime) ? (now - lastIntroTime) / 1000 : 0;
-        if (shouldPlay) {
-            prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).apply();
-            android.util.Log.d("BootIntro", "wake intro: " + decision.reason
-                    + ", gap ok (" + elapsedSec + "s >= " + (gapMs / 1000) + "s)");
-            HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
-            if (headerFocus != null) {
-                headerFocus.setSuppressed(true);
-            }
-            triggerBootIntro(true, -1, null, false);
-        } else {
-            android.util.Log.d("BootIntro", "suppressed: " + decision.reason
-                    + ", gap not met (" + elapsedSec + "s < " + (gapMs / 1000) + "s)");
+        boolean gapMet = BootIntro.isWakeGapMet(gapMs, stoppedDurationMs, lastStopTime, now);
+        if (!gapMet) {
+            android.util.Log.d("BootIntro", "wake intro suppressed: sleep shorter than gap ("
+                    + (stoppedDurationMs / 1000) + "s < " + (gapMs / 1000) + "s, reason=" + decision.reason + ")");
+            return;
         }
+
+        lastIntroTriggerTime = now;
+        prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).commit();
+        android.util.Log.d("BootIntro", "wake intro: " + decision.reason
+                + ", gap ok (sleep=" + (stoppedDurationMs / 1000) + "s >= " + (gapMs / 1000) + "s)");
+        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        if (headerFocus != null) {
+            headerFocus.setSuppressed(true);
+        }
+        triggerBootIntro(true, -1, null, false);
     }
 
     private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation) {
@@ -1239,22 +1248,50 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
+        if (isPreview) {
+            if (IntroSettings.MESSAGES_OFF.equalsIgnoreCase(introSettings.messagesMode)) {
+                title = "Preview";
+                subtitle = "Messages: Off";
+            } else if (IntroSettings.MESSAGES_TITLES_ONLY.equalsIgnoreCase(introSettings.messagesMode)) {
+                subtitle = "";
+            }
+        } else {
+            if (IntroSettings.MESSAGES_OFF.equalsIgnoreCase(introSettings.messagesMode)) {
+                return;
+            } else if (IntroSettings.MESSAGES_TITLES_ONLY.equalsIgnoreCase(introSettings.messagesMode)) {
+                subtitle = "";
+            }
+        }
+
         String anim = forcedAnimation != null ? forcedAnimation : introSettings.animation;
 
         bootIntroOverlay = new BootIntroOverlay(this);
         bootIntroOverlay.setIntroSettings(introSettings, title, subtitle, anim);
+        bootIntroOverlay.setOnRevealListener(() -> {
+            if (deferReloadAppsUntilReveal) {
+                deferReloadAppsUntilReveal = false;
+                android.util.Log.d("BootIntro", "onRevealStart: executing deferred reloadApps");
+                reloadApps(deferredReloadAnimate, deferredReloadRebuild, deferredReloadEntrance);
+            }
+        });
         root.addView(bootIntroOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        introStartTime = SystemClock.elapsedRealtime();
         userNavigatedDuringIntro = false;
         bootIntroOverlay.start(homeContent, grid, () -> {
+            if (deferReloadAppsUntilReveal) {
+                deferReloadAppsUntilReveal = false;
+                android.util.Log.d("BootIntro", "finish: executing deferred reloadApps");
+                reloadApps(deferredReloadAnimate, deferredReloadRebuild, deferredReloadEntrance);
+            }
             bootIntroOverlay = null;
             BootIntro.clearDreamState();
             getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE).edit()
                     .putBoolean(BootIntro.KEY_PENDING_WAKE, false)
                     .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, false)
                     .putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, false)
-                    .apply();
+                    .commit();
             if (previewFromSettings) {
                 previewFromSettings = false;
                 Intent backIntent = new Intent(this, IntroSettingsActivity.class);
@@ -1354,7 +1391,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (intent != null && (ACTION_PREVIEW_INTRO.equals(intent.getAction()) || intent.getBooleanExtra("test_preview", false))) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
-            triggerBootIntro(false, -1, null, true);
+            String forcedAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
+            triggerBootIntro(false, -1, forcedAnim, true);
             return;
         }
         if (intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false)) {
@@ -1423,12 +1461,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
                 tilesReady = false;
-                reloadApps(true);
+                if (bootIntroOverlay != null && bootIntroOverlay.isPlaying() && !bootIntroOverlay.isRevealing()) {
+                    deferReloadAppsUntilReveal = true;
+                    deferredReloadAnimate = true;
+                    deferredReloadRebuild = true;
+                    deferredReloadEntrance = true;
+                    android.util.Log.d("BootIntro", "deferring reloadApps(rebuild) until intro reveal starts");
+                } else {
+                    reloadApps(true);
+                }
                 break;
             case REFOCUS:
                 // The same tiles: only the focus goes back, as after a rebuild, without replaying the entrance.
                 tilesReady = false;
-                reloadApps(true, false, false);
+                if (bootIntroOverlay != null && bootIntroOverlay.isPlaying() && !bootIntroOverlay.isRevealing()) {
+                    deferReloadAppsUntilReveal = true;
+                    deferredReloadAnimate = true;
+                    deferredReloadRebuild = false;
+                    deferredReloadEntrance = false;
+                    android.util.Log.d("BootIntro", "deferring reloadApps(refocus) until intro reveal starts");
+                } else {
+                    reloadApps(true, false, false);
+                }
                 break;
             default:
                 break;
@@ -1779,9 +1833,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                // Key release (ACTION_UP) must NEVER skip the intro
+                return true;
+            }
+            long elapsed = SystemClock.elapsedRealtime() - introStartTime;
+            if (elapsed < 500L) {
+                // Debounce: ignore key events within 500ms of intro start so the click/key-repeat
+                // that started the intro (or preview) cannot immediately skip it.
+                return true;
+            }
             boolean revealing = bootIntroOverlay.isRevealing();
             if (revealing && isNavKey(event.getKeyCode())) {
                 userNavigatedDuringIntro = true;
+            }
+            if (deferReloadAppsUntilReveal) {
+                deferReloadAppsUntilReveal = false;
+                android.util.Log.d("BootIntro", "skip: executing deferred reloadApps");
+                reloadApps(deferredReloadAnimate, deferredReloadRebuild, deferredReloadEntrance);
             }
             bootIntroOverlay.skip();
             if (!revealing) return true;

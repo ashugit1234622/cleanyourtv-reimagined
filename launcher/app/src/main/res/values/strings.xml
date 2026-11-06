@@ -168,7 +168,12 @@
     <string name="intro_boot_state">Boot intro: %1$s</string>
     <string name="intro_wake_state">Play on wake: %1$s</string>
     <string name="intro_wake_gap_state">Wake gap: %1$d min</string>
+    <string name="intro_wake_gap_display">Wake gap: %1$s</string>
+    <string name="intro_wake_gap_always">Always</string>
+    <string name="intro_wake_gap_seconds">%1$d s</string>
+    <string name="intro_wake_gap_minutes">%1$d min</string>
     <string name="intro_hold_state">Hold time: %1$s</string>
+    <string name="intro_hold_auto">Auto</string>
     <string name="intro_speed_state">Speed: %1$s</string>
     <string name="intro_animation_state">Animation: %1$s</string>
     <string name="intro_messages_state">Messages: %1$s</string>
@@ -177,6 +182,13 @@
     <string name="intro_reset_done">Intro reset to defaults</string>
     <string name="intro_reduced_motion_note">Reduced motion is active (intro skipped)</string>
     <string name="intro_reduced_motion_tag">Reduced motion active</string>
+    <string name="intro_boot_help">Plays greeting when TV turns on from a cold reboot</string>
+    <string name="intro_wake_help">Plays greeting when waking from sleep or screensaver</string>
+    <string name="intro_wake_gap_help">Minimum time the TV must be asleep before intro plays</string>
+    <string name="intro_hold_help">Greeting duration before revealing home (Auto adapts to message length)</string>
+    <string name="intro_speed_help">Scales entrance and reveal speeds (does not shorten hold)</string>
+    <string name="intro_animation_help">Visual style used to animate greeting text</string>
+    <string name="intro_messages_help">Show greetings with helpful tips, or titles only</string>
     <string name="intro_speed_slow">Slow</string>
     <string name="intro_speed_normal">Normal</string>
     <string name="intro_speed_fast">Fast</string>

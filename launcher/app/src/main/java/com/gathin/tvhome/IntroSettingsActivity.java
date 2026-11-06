@@ -92,6 +92,23 @@ public final class IntroSettingsActivity extends Activity {
         }
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Synchronously flush any pending preference writes before leaving the screen or powering off
+        if (userPrefs != null) {
+            userPrefs.edit().commit();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (userPrefs != null) {
+            userPrefs.edit().commit();
+        }
+    }
+
     private void setupRowListeners() {
         // 1. Boot Intro toggle
         setupStepperRow(bootChoice, this::toggleBootIntro, this::toggleBootIntro, this::toggleBootIntro);
@@ -99,17 +116,17 @@ public final class IntroSettingsActivity extends Activity {
         // 2. Play on wake toggle
         setupStepperRow(wakeChoice, this::toggleWakeIntro, this::toggleWakeIntro, this::toggleWakeIntro);
 
-        // 3. Wake gap stepper (1, 2, 5, 10, 15, 30, 60 min)
+        // 3. Wake gap stepper (Always, 10s, 30s, 1m, 2m, 5m, 10m, 15m, 30m, 60m)
         setupStepperRow(wakeGapChoice,
                 () -> stepWakeGap(-1),
                 () -> stepWakeGap(1),
                 () -> stepWakeGap(1));
 
-        // 4. Hold time stepper (0.5s to 4.0s in 0.5s steps)
+        // 4. Hold time stepper (Auto, 1.5s, 2.0s, 2.5s, 3.0s, 4.0s, 5.0s)
         setupStepperRow(holdChoice,
-                () -> stepHoldTime(-500),
-                () -> stepHoldTime(500),
-                () -> stepHoldTime(500));
+                () -> stepHoldTime(-1),
+                () -> stepHoldTime(1),
+                () -> stepHoldTime(1));
 
         // 5. Speed stepper (Slow / Normal / Fast)
         setupStepperRow(speedChoice,
@@ -132,11 +149,13 @@ public final class IntroSettingsActivity extends Activity {
         // 8. Preview intro
         previewChoice.setOnClickListener(v -> playPreview());
         previewChoice.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-                v.playSoundEffect(SoundEffectConstants.CLICK);
-                playPreview();
-                return true;
+                if (event.getAction() == KeyEvent.ACTION_UP) {
+                    v.playSoundEffect(SoundEffectConstants.CLICK);
+                    playPreview();
+                    return true;
+                }
+                return true; // Consume ACTION_DOWN so it does not trigger before button release
             }
             return false;
         });
@@ -189,22 +208,26 @@ public final class IntroSettingsActivity extends Activity {
 
     private void stepWakeGap(int delta) {
         IntroSettings s = IntroSettings.load(this, config);
-        int current = s.wakeGapMinutes;
+        int currentSec = s.wakeGapSeconds;
         int idx = 0;
-        for (int i = 0; i < IntroSettings.WAKE_GAPS.length; i++) {
-            if (IntroSettings.WAKE_GAPS[i] == current) {
+        for (int i = 0; i < IntroSettings.WAKE_GAPS_SEC.length; i++) {
+            if (IntroSettings.WAKE_GAPS_SEC[i] == currentSec) {
                 idx = i;
                 break;
             }
         }
         int next = idx + delta;
         if (next < 0) next = 0;
-        else if (next >= IntroSettings.WAKE_GAPS.length) next = delta > 0 ? 0 : IntroSettings.WAKE_GAPS.length - 1;
-        userPrefs.edit().putInt(IntroSettings.KEY_WAKE_GAP_MIN, IntroSettings.WAKE_GAPS[next]).apply();
+        else if (next >= IntroSettings.WAKE_GAPS_SEC.length) next = delta > 0 ? 0 : IntroSettings.WAKE_GAPS_SEC.length - 1;
+        int nextSec = IntroSettings.WAKE_GAPS_SEC[next];
+        userPrefs.edit()
+                .putInt(IntroSettings.KEY_WAKE_GAP_SEC, nextSec)
+                .putInt(IntroSettings.KEY_WAKE_GAP_MIN, (nextSec + 59) / 60)
+                .apply();
         refresh();
     }
 
-    private void stepHoldTime(int deltaMs) {
+    private void stepHoldTime(int delta) {
         IntroSettings s = IntroSettings.load(this, config);
         int current = s.holdMs;
         int idx = 0;
@@ -214,9 +237,9 @@ public final class IntroSettingsActivity extends Activity {
                 break;
             }
         }
-        int next = idx + (deltaMs > 0 ? 1 : -1);
+        int next = idx + delta;
         if (next < 0) next = 0;
-        else if (next >= IntroSettings.HOLD_TIMES_MS.length) next = deltaMs > 0 ? 0 : IntroSettings.HOLD_TIMES_MS.length - 1;
+        else if (next >= IntroSettings.HOLD_TIMES_MS.length) next = delta > 0 ? 0 : IntroSettings.HOLD_TIMES_MS.length - 1;
         userPrefs.edit().putInt(IntroSettings.KEY_HOLD_MS, IntroSettings.HOLD_TIMES_MS[next]).apply();
         refresh();
     }
@@ -270,9 +293,18 @@ public final class IntroSettingsActivity extends Activity {
     }
 
     private void playPreview() {
+        if (userPrefs != null) {
+            userPrefs.edit().commit();
+        }
+        IntroSettings s = IntroSettings.load(this, config);
         Intent intent = new Intent(this, MainActivity.class);
         intent.setAction(MainActivity.ACTION_PREVIEW_INTRO);
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         intent.putExtra("preview_from_settings", true);
+        intent.putExtra(BootIntro.EXTRA_TEST_ANIMATION, s.animation);
+        intent.putExtra("intro_speed", s.speed);
+        intent.putExtra("intro_hold_ms", s.holdMs);
+        intent.putExtra("intro_messages", s.messagesMode);
         startActivity(intent);
     }
 
@@ -302,11 +334,24 @@ public final class IntroSettingsActivity extends Activity {
         wakeChoice.setText(getString(R.string.intro_wake_state, s.introOnWake ? onStr : offStr));
 
         // Wake gap
-        wakeGapChoice.setText(getString(R.string.intro_wake_gap_state, s.wakeGapMinutes));
+        int gapSec = s.wakeGapSeconds;
+        String gapLabel;
+        if (gapSec == 0) {
+            gapLabel = getString(R.string.intro_wake_gap_always);
+        } else if (gapSec < 60) {
+            gapLabel = getString(R.string.intro_wake_gap_seconds, gapSec);
+        } else {
+            gapLabel = getString(R.string.intro_wake_gap_minutes, gapSec / 60);
+        }
+        wakeGapChoice.setText(getString(R.string.intro_wake_gap_display, gapLabel));
 
         // Hold time
-        float holdSec = s.holdMs / 1000f;
-        holdChoice.setText(getString(R.string.intro_hold_state, String.format(Locale.ROOT, "%.1fs", holdSec)));
+        if (s.holdMs == IntroSettings.HOLD_AUTO) {
+            holdChoice.setText(getString(R.string.intro_hold_state, getString(R.string.intro_hold_auto)));
+        } else {
+            float holdSec = s.holdMs / 1000f;
+            holdChoice.setText(getString(R.string.intro_hold_state, String.format(Locale.ROOT, "%.1fs", holdSec)));
+        }
 
         // Speed
         String speedLabel = getString(R.string.intro_speed_normal);
@@ -343,4 +388,3 @@ public final class IntroSettingsActivity extends Activity {
         }
     }
 }
-

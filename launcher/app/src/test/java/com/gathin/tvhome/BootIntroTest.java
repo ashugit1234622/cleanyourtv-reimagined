@@ -187,8 +187,8 @@ public class BootIntroTest {
 
     @Test
     public void durationAndHoldCaps() {
-        assertTrue("Total duration must be capped at 5000ms", BootIntro.MAX_DURATION_MS <= 5000);
-        assertEquals("Default hold is 2000ms", 2000, BootIntro.DEFAULT_HOLD_MS);
+        assertTrue("Total duration must be capped at 7000ms", BootIntro.MAX_DURATION_MS <= 7000);
+        assertEquals("Default hold is 2500ms", 2500, BootIntro.DEFAULT_HOLD_MS);
     }
 
     @Test
@@ -202,6 +202,7 @@ public class BootIntroTest {
         assertFalse(s1.bootIntro);
         assertFalse(s1.introOnWake);
         assertEquals(15, s1.wakeGapMinutes);
+        assertEquals(900, s1.wakeGapSeconds);
         assertEquals(3000, s1.holdMs);
         assertEquals("fast", s1.speed);
         assertEquals("shimmer", s1.animation);
@@ -216,6 +217,7 @@ public class BootIntroTest {
         assertTrue(s2.bootIntro);
         assertFalse(s2.introOnWake);
         assertEquals(10, s2.wakeGapMinutes);
+        assertEquals(600, s2.wakeGapSeconds);
         assertEquals(2500, s2.holdMs);
         assertEquals("slow", s2.speed);
         assertEquals("slide", s2.animation);
@@ -230,6 +232,7 @@ public class BootIntroTest {
         assertTrue(s3.bootIntro);
         assertTrue(s3.introOnWake);
         assertEquals(5, s3.wakeGapMinutes);
+        assertEquals(300, s3.wakeGapSeconds);
         assertEquals(2000, s3.holdMs);
         assertEquals("normal", s3.speed);
         assertEquals("pop", s3.animation);
@@ -244,6 +247,7 @@ public class BootIntroTest {
                 true, true, 5, 2000, "normal", "pop"
         );
         assertEquals(5, s.wakeGapMinutes);
+        assertEquals(300, s.wakeGapSeconds);
         assertEquals(2000, s.holdMs);
         assertEquals("normal", s.speed);
         assertEquals("pop", s.animation);
@@ -251,36 +255,134 @@ public class BootIntroTest {
     }
 
     @Test
-    public void holdAndSpeedClampedTo5sCap() {
-        // Slow (multiplier 1.4f): base anims = 770 + 840 + 490 = 2100ms
-        // Hold 4000ms: 4000 + 2100 = 6100 > 5000 -> clamped hold = 5000 - 2100 = 2900ms
-        IntroSettings.Durations slowClamped = IntroSettings.computeDurations(4000, "slow");
-        assertEquals(2900, slowClamped.holdMs);
-        assertTrue("Total must be <= 5000ms", slowClamped.totalMs <= 5000);
-        assertEquals(5000, slowClamped.totalMs);
+    public void speedDoesNotAffectHoldAndDurationCappedAt7s() {
+        // Slow speed (multiplier 1.4f): base anims = 770 + 840 + 490 = 2100ms
+        IntroSettings.Durations slowD = IntroSettings.computeDurations(3000, "slow");
+        assertEquals("Hold must NOT be affected by slow speed", 3000, slowD.holdMs);
+        assertEquals(770, slowD.entranceMs);
+        assertEquals(840, slowD.revealMs);
+        assertEquals(490, slowD.dockMs);
+        assertEquals(5100, slowD.totalMs);
+        assertTrue("Total must be <= 7000ms", slowD.totalMs <= 7000);
 
-        // Normal (multiplier 1.0f): base anims = 550 + 600 + 350 = 1500ms
-        // Hold 4000ms: 4000 + 1500 = 5500 > 5000 -> clamped hold = 5000 - 1500 = 3500ms
-        IntroSettings.Durations normalClamped = IntroSettings.computeDurations(4000, "normal");
-        assertEquals(3500, normalClamped.holdMs);
-        assertTrue("Total must be <= 5000ms", normalClamped.totalMs <= 5000);
-        assertEquals(5000, normalClamped.totalMs);
+        // Normal speed (multiplier 1.0f): base anims = 550 + 600 + 350 = 1500ms
+        IntroSettings.Durations normalD = IntroSettings.computeDurations(3000, "normal");
+        assertEquals("Hold must NOT be affected by normal speed", 3000, normalD.holdMs);
+        assertEquals(550, normalD.entranceMs);
+        assertEquals(600, normalD.revealMs);
+        assertEquals(350, normalD.dockMs);
+        assertEquals(4500, normalD.totalMs);
+        assertTrue("Total must be <= 7000ms", normalD.totalMs <= 7000);
 
-        // Fast (multiplier 0.7f): base anims = 385 + 420 + 245 = 1050ms
-        // Hold 4000ms: 4000 + 1050 = 5050 > 5000 -> clamped hold = 5000 - 1050 = 3950ms
-        IntroSettings.Durations fastClamped = IntroSettings.computeDurations(4000, "fast");
-        assertEquals(3950, fastClamped.holdMs);
-        assertTrue("Total must be <= 5000ms", fastClamped.totalMs <= 5000);
-        assertEquals(5000, fastClamped.totalMs);
+        // Fast speed (multiplier 0.7f): base anims = 385 + 420 + 245 = 1050ms
+        IntroSettings.Durations fastD = IntroSettings.computeDurations(3000, "fast");
+        assertEquals("Hold must NOT be affected by fast speed", 3000, fastD.holdMs);
+        assertEquals(385, fastD.entranceMs);
+        assertEquals(420, fastD.revealMs);
+        assertEquals(245, fastD.dockMs);
+        assertEquals(4050, fastD.totalMs);
+        assertTrue("Total must be <= 7000ms", fastD.totalMs <= 7000);
 
         // Test all valid stepper holds and speeds
         for (int hold : IntroSettings.HOLD_TIMES_MS) {
             for (String spd : IntroSettings.SPEEDS) {
                 IntroSettings.Durations d = IntroSettings.computeDurations(hold, spd);
-                assertTrue("Total duration for hold=" + hold + ", speed=" + spd + " must be <= 5000ms, got " + d.totalMs,
-                        d.totalMs <= 5000);
+                if (hold > 0) {
+                    assertEquals("Hold must match requested value exactly", hold, d.holdMs);
+                }
+                assertTrue("Total duration for hold=" + hold + ", speed=" + spd + " must be <= 7000ms, got " + d.totalMs,
+                        d.totalMs <= 7000);
             }
         }
+    }
+
+    @Test
+    public void autoHoldFormulaCalculatesAccurately() {
+        // Auto = max(2500, 1500 + 70 * (titleChars + subtitleChars)) capped at 4500
+        // Case 1: Short message (7 chars): 1500 + 70*7 = 1990 -> min clamp 2500ms
+        int holdShort = IntroSettings.computeHoldMs(0, "Welcome", "");
+        assertEquals(2500, holdShort);
+
+        // Case 2: Zero chars -> min clamp 2500ms
+        int holdZero = IntroSettings.computeHoldMs(0, "", "");
+        assertEquals(2500, holdZero);
+
+        // Case 3: Medium message (20 chars): 1500 + 70*20 = 2900ms
+        int holdMed = IntroSettings.computeHoldMs(0, "Good evening", "Enjoy TV");
+        assertEquals(2900, holdMed);
+
+        // Case 4: Long message (40 chars): 1500 + 70*40 = 4300ms
+        String title40 = "Good afternoon from TV"; // 22
+        String sub40 = "Check out your apps";   // 19 -> 41 chars -> 1500 + 70*41 = 4370ms
+        assertEquals(4370, IntroSettings.computeHoldMs(0, title40, sub40));
+
+        // Case 5: Very long message (50 chars): 1500 + 70*50 = 5000ms -> max clamp 4500ms
+        String longText = "This is a very long message with more than fifty characters in total length";
+        assertEquals(4500, IntroSettings.computeHoldMs(0, longText, ""));
+
+        // Case 6: Manually chosen values are returned exactly as chosen
+        assertEquals(1500, IntroSettings.computeHoldMs(1500, "Any title", "Any sub"));
+        assertEquals(2000, IntroSettings.computeHoldMs(2000, "Any title", "Any sub"));
+        assertEquals(2500, IntroSettings.computeHoldMs(2500, "Any title", "Any sub"));
+        assertEquals(3000, IntroSettings.computeHoldMs(3000, "Any title", "Any sub"));
+        assertEquals(4000, IntroSettings.computeHoldMs(4000, "Any title", "Any sub"));
+        assertEquals(5000, IntroSettings.computeHoldMs(5000, "Any title", "Any sub"));
+    }
+
+    @Test
+    public void wakeGapDecisionsForAlwaysAndSeconds() {
+        long now = 100_000L;
+        long lastStop = now - 5000L; // stopped 5s ago
+
+        // 1. Always (gap = 0s): 5s sleep must play, 15s sleep must play
+        assertTrue("Always gap (0s) must play after 5s sleep",
+                BootIntro.isWakeGapMet(0, 5000L, lastStop, now));
+        assertTrue("Always gap (0s) must play after 15s sleep",
+                BootIntro.isWakeGapMet(0, 15000L, lastStop, now));
+
+        // 2. 10 s gap (10,000ms):
+        long gap10s = 10_000L;
+        assertFalse("10s gap: 5s sleep must NOT play",
+                BootIntro.isWakeGapMet(gap10s, 5000L, lastStop, now));
+        assertFalse("10s gap: 9.9s sleep must NOT play",
+                BootIntro.isWakeGapMet(gap10s, 9900L, lastStop, now));
+        assertTrue("10s gap: 10s sleep must play",
+                BootIntro.isWakeGapMet(gap10s, 10000L, lastStop, now));
+        assertTrue("10s gap: 20s sleep must play",
+                BootIntro.isWakeGapMet(gap10s, 20000L, lastStop, now));
+
+        // 3. 30 s gap (30,000ms):
+        long gap30s = 30_000L;
+        assertFalse("30s gap: 15s sleep must NOT play",
+                BootIntro.isWakeGapMet(gap30s, 15000L, lastStop, now));
+        assertFalse("30s gap: 29s sleep must NOT play",
+                BootIntro.isWakeGapMet(gap30s, 29000L, lastStop, now));
+        assertTrue("30s gap: 30s sleep must play",
+                BootIntro.isWakeGapMet(gap30s, 30000L, lastStop, now));
+        assertTrue("30s gap: 45s sleep must play",
+                BootIntro.isWakeGapMet(gap30s, 45000L, lastStop, now));
+
+        // 4. 1 min gap (60,000ms):
+        long gap1m = 60_000L;
+        assertFalse("1m gap: 30s sleep must NOT play",
+                BootIntro.isWakeGapMet(gap1m, 30000L, lastStop, now));
+        assertTrue("1m gap: 60s sleep must play",
+                BootIntro.isWakeGapMet(gap1m, 60000L, lastStop, now));
+        assertTrue("1m gap: 90s sleep must play",
+                BootIntro.isWakeGapMet(gap1m, 90000L, lastStop, now));
+
+        // 5. 5 min gap (300,000ms):
+        long gap5m = 300_000L;
+        assertFalse("5m gap: 2 min sleep must NOT play",
+                BootIntro.isWakeGapMet(gap5m, 120000L, lastStop, now));
+        assertTrue("5m gap: 5 min sleep must play",
+                BootIntro.isWakeGapMet(gap5m, 300000L, lastStop, now));
+
+        // 6. First start / reboot during sleep
+        assertTrue("First start (lastStop <= 0) must play",
+                BootIntro.isWakeGapMet(gap5m, 0, 0, now));
+        assertTrue("Reboot during sleep (now < lastStop) must play",
+                BootIntro.isWakeGapMet(gap5m, 0, now + 10000L, now));
     }
 
     @Test
