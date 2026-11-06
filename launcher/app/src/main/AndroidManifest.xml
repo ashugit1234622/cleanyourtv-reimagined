@@ -231,6 +231,7 @@
             android:name=".ClockDream"
             android:label="@string/dream_name"
             android:exported="true"
+            android:enabled="false"
             android:permission="android.permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
