@@ -120,6 +120,10 @@ public class BridgeHttpServer extends NanoHTTPD {
                 return handleUploadWallpaper(session);
             } else if (Method.GET.equals(method) && "/wallpapers".equals(uri)) {
                 return handleGetWallpapers();
+            } else if (Method.GET.equals(method) && "/modes".equals(uri)) {
+                return handleGetModes();
+            } else if (Method.POST.equals(method) && "/modes".equals(uri)) {
+                return handleSetMode(session);
             } else if (Method.GET.equals(method) && "/spike/adb/status".equals(uri)) {
                 return handleSpikeAdbStatus();
             } else if (Method.POST.equals(method) && "/spike/adb/connect".equals(uri)) {
@@ -724,6 +728,76 @@ public class BridgeHttpServer extends NanoHTTPD {
             res.put("wallpapers", arr);
         } catch (JSONException ignored) {}
         return jsonResponse(Response.Status.OK, res.toString());
+    }
+
+    private Response handleGetModes() {
+        JSONObject modes = BridgeModesManager.getAllModesJson(context);
+        return jsonResponse(Response.Status.OK, modes.toString());
+    }
+
+    private Response handleSetMode(IHTTPSession session) {
+        String body = readBody(session);
+        if (body == null || body.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing request body");
+        }
+
+        String type = null;
+        int mode = -1;
+        String feature = null;
+        boolean hasEnabled = false;
+        boolean enabled = false;
+
+        try {
+            JSONObject json = new JSONObject(body);
+            if (json.has("type")) type = json.getString("type").trim().toLowerCase(Locale.ROOT);
+            if (json.has("mode")) mode = json.getInt("mode");
+            if (json.has("feature")) feature = json.getString("feature").trim();
+            if (json.has("enabled")) {
+                enabled = json.getBoolean("enabled");
+                hasEnabled = true;
+            }
+        } catch (JSONException e) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid JSON: " + e.getMessage());
+        }
+
+        if (type == null) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing 'type' parameter");
+        }
+
+        boolean success = false;
+        switch (type) {
+            case "picture":
+                if (mode < 0) {
+                    return errorResponse(Response.Status.BAD_REQUEST, "Missing or invalid 'mode' integer for picture");
+                }
+                success = BridgeModesManager.setPictureMode(context, mode);
+                break;
+            case "sound":
+                if (mode < 0) {
+                    return errorResponse(Response.Status.BAD_REQUEST, "Missing or invalid 'mode' integer for sound");
+                }
+                success = BridgeModesManager.setSoundMode(context, mode);
+                break;
+            case "dts":
+                if (feature == null || feature.isEmpty()) {
+                    return errorResponse(Response.Status.BAD_REQUEST, "Missing 'feature' parameter for DTS");
+                }
+                if (!hasEnabled) {
+                    return errorResponse(Response.Status.BAD_REQUEST, "Missing 'enabled' parameter for DTS");
+                }
+                success = BridgeModesManager.setDts(context, feature, enabled);
+                break;
+            default:
+                return errorResponse(Response.Status.BAD_REQUEST, "Unknown mode type: " + type);
+        }
+
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", success ? "ok" : "failed");
+            resp.put("modes", BridgeModesManager.getAllModesJson(context));
+        } catch (JSONException ignored) {}
+
+        return jsonResponse(Response.Status.OK, resp.toString());
     }
 
     private static String md5Hex(byte[] data) {

@@ -80,6 +80,10 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .trio{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
 .trio .btn{flex-direction:column;gap:4px;padding:13px 6px;font-size:13px;border-radius:22px}
 .ok{font-size:26px;font-weight:800;letter-spacing:.02em}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;padding:7px 13px;border-radius:99px;background:var(--sf);border:1px solid var(--ln);font-size:12.5px;font-weight:650;color:var(--mu);cursor:pointer;transition:all .12s;white-space:nowrap}
+.chip:active{transform:scale(.94)}
+.chip.act{background:var(--ac);color:var(--on);border-color:var(--ac)}
 </style>
 </head>
 <body>
@@ -154,7 +158,39 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
   </div>
 </section>
 
-<section class="view" id="v-tv" hidden><div id="tv"><p class="mu c">Loading TV details…</p></div></section>
+<section class="view" id="v-tv" hidden>
+  <div id="modes-card" class="box" style="margin-bottom:16px" hidden>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-size:15px">Picture &amp; Sound Modes</b>
+      <span class="mu sm" id="modes-stat">Active</span>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span class="mu sm" style="font-weight:600">Picture Mode</span>
+        <span class="sm" id="cur-pic-name" style="color:var(--ac);font-weight:700">Standard</span>
+      </div>
+      <div class="chips" id="pic-chips"></div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span class="mu sm" style="font-weight:600">Sound Mode</span>
+        <span class="sm" id="cur-snd-name" style="color:var(--ac);font-weight:700">Standard</span>
+      </div>
+      <div class="chips" id="snd-chips"></div>
+    </div>
+
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span class="mu sm" style="font-weight:600">DTS Audio</span>
+      </div>
+      <div class="chips" id="dts-chips"></div>
+    </div>
+  </div>
+
+  <div id="tv"><p class="mu c">Loading TV details…</p></div>
+</section>
 </div>
 
 <nav class="nav">
@@ -195,11 +231,21 @@ function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='show'+(ba
 
 /* Sample data for preview mode */
 const DEMO_APPS=[{name:'TizenTube Cobalt',package:'demo.tt',isDock:true,dockPos:0},{name:'NetMirror',package:'demo.nm',isDock:true,dockPos:1,launchOnly:true},{name:'VLC',package:'demo.vlc'},{name:'Plex',package:'demo.plex'},{name:'Files',package:'demo.files'},{name:'Settings',package:'demo.set'}];
+let demoModes={picture:{currentId:5,currentName:'Vivid',options:[{id:0,name:'Standard'},{id:3,name:'Movie'},{id:5,name:'Vivid'},{id:4,name:'Game'},{id:6,name:'Sport'},{id:21,name:'Filmmaker'},{id:2,name:'Monitor'},{id:1,name:'Custom'}]},sound:{currentId:0,currentName:'Standard',options:[{id:0,name:'Standard'},{id:1,name:'Movie'},{id:5,name:'Music'},{id:3,name:'Game'},{id:2,name:'News'},{id:6,name:'Sport'},{id:4,name:'Custom'}]},dts:{virtualX:true,bass:false,clarity:true,surround:false}};
 async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?JSON.parse(o.body):{};
  if(p==='/apps')return{apps:DEMO_APPS};
  if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
  if(p==='/wallpapers')return{count:3,wallpapers:[]};
  if(p==='/wallpaper')return{status:'ok',filename:'demo_4k.jpg'};
+ if(p==='/modes'){
+  if(o.method==='POST'){
+   if(b.type==='picture'){demoModes.picture.currentId=b.mode;const f=demoModes.picture.options.find(x=>x.id===b.mode);if(f)demoModes.picture.currentName=f.name}
+   if(b.type==='sound'){demoModes.sound.currentId=b.mode;const f=demoModes.sound.options.find(x=>x.id===b.mode);if(f)demoModes.sound.currentName=f.name}
+   if(b.type==='dts'&&b.feature)demoModes.dts[b.feature]=!!b.enabled;
+   return{status:'ok',modes:demoModes};
+  }
+  return demoModes;
+ }
  if(p==='/launch'&&b.url&&!b.package&&!/youtu/.test(b.url)){const e=new Error('choose');e.status=409;e.data={candidates:[{package:'demo.tt',label:'TizenTube Cobalt'},{package:'demo.vlc',label:'VLC'}]};throw e}
  return{status:'ok'}}
 
@@ -220,7 +266,7 @@ async function doPair(pin){try{const r=await api('/pair',{method:'POST',body:JSO
 
 /* Status and stats */
 function online(b,s){$('#pill').classList.toggle('on',b);$('#ptxt').textContent=b?'Connected'+(s&&s.wifi&&s.wifi.ip?' · '+s.wifi.ip:''):'TV unreachable'}
-async function poll(){try{const s=await api('/stats');last=s;online(true,s);if(tab==='tv')renderTv(s)}catch(e){if(e.message!=='auth')online(false)}}
+async function poll(){try{const s=await api('/stats');last=s;online(true,s);if(tab==='tv'){renderTv(s);loadModes()}}catch(e){if(e.message!=='auth')online(false)}}
 function ring(p){const c=276.46,v=Math.max(0,Math.min(100,p||0));return`<div class="ring"><svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="val" cx="50" cy="50" r="44" stroke-dasharray="${(c*v/100).toFixed(1)} ${c}"/></svg><b>${Math.round(v)}%</b></div>`}
 const row=(a,b)=>`<div class="rw"><span class="mu">${a}</span><span>${esc(b??'–')}</span></div>`;
 function renderTv(s){if(!s)return;const r=s.ram||{},d=s.storage||{},y=s.system||{},w=s.wifi||{};
@@ -305,12 +351,78 @@ if(wpBtn&&wpIn){
  };
 }
 
+/* Picture & Sound Modes */
+let tvModes=null;
+async function loadModes(){
+ try{
+  const res=await api('/modes');
+  tvModes=res;renderModes(res);
+ }catch(e){}
+}
+
+function renderModes(data){
+ if(!data)return;
+ const card=$('#modes-card');
+ if(card)card.hidden=false;
+
+ if(data.picture){
+  const pic=data.picture,curEl=$('#cur-pic-name'),wrap=$('#pic-chips');
+  if(curEl)curEl.textContent=pic.currentName||'Standard';
+  if(wrap&&pic.options){
+   wrap.innerHTML=pic.options.map(opt=>`<button class="chip${opt.id===pic.currentId?' act':''}" data-id="${opt.id}">${esc(opt.name)}</button>`).join('');
+   $$('#pic-chips .chip').forEach(b=>{b.onclick=()=>switchMode('picture',parseInt(b.dataset.id,10),b.textContent)});
+  }
+ }
+
+ if(data.sound){
+  const snd=data.sound,curEl=$('#cur-snd-name'),wrap=$('#snd-chips');
+  if(curEl)curEl.textContent=snd.currentName||'Standard';
+  if(wrap&&snd.options){
+   wrap.innerHTML=snd.options.map(opt=>`<button class="chip${opt.id===snd.currentId?' act':''}" data-id="${opt.id}">${esc(opt.name)}</button>`).join('');
+   $$('#snd-chips .chip').forEach(b=>{b.onclick=()=>switchMode('sound',parseInt(b.dataset.id,10),b.textContent)});
+  }
+ }
+
+ if(data.dts){
+  const dts=data.dts,wrap=$('#dts-chips');
+  if(wrap){
+   const items=[{k:'virtualX',l:'Virtual:X',v:!!dts.virtualX},{k:'bass',l:'Bass Boost',v:!!dts.bass},{k:'clarity',l:'Dialog Clarity',v:!!dts.clarity},{k:'surround',l:'Surround',v:!!dts.surround}];
+   wrap.innerHTML=items.map(it=>`<button class="chip${it.v?' act':''}" data-k="${it.k}" data-on="${it.v?'1':'0'}">${it.v?'✓ ':''}${esc(it.l)}</button>`).join('');
+   $$('#dts-chips .chip').forEach(b=>{b.onclick=()=>toggleDts(b.dataset.k,b.dataset.on!=='1',b.textContent)});
+  }
+ }
+}
+
+async function switchMode(type,id,name){
+ buzz();
+ if(type==='picture'&&tvModes&&tvModes.picture){tvModes.picture.currentId=id;tvModes.picture.currentName=name;renderModes(tvModes)}
+ else if(type==='sound'&&tvModes&&tvModes.sound){tvModes.sound.currentId=id;tvModes.sound.currentName=name;renderModes(tvModes)}
+ toast('Switching to '+name+'…');
+ try{
+  const res=await api('/modes',{method:'POST',body:JSON.stringify({type,mode:id})});
+  if(res&&res.modes){tvModes=res.modes;renderModes(res.modes)}
+  toast((type==='picture'?'Picture: ':'Sound: ')+name);
+ }catch(e){toast('Failed to set mode: '+e.message,1);loadModes()}
+}
+
+async function toggleDts(key,enable,label){
+ buzz();
+ if(tvModes&&tvModes.dts){tvModes.dts[key]=enable;renderModes(tvModes)}
+ const cl=label.replace(/^✓\s*/,'');
+ toast(cl+': '+(enable?'ON':'OFF')+'…');
+ try{
+  const res=await api('/modes',{method:'POST',body:JSON.stringify({type:'dts',feature:key,enabled:enable})});
+  if(res&&res.modes){tvModes=res.modes;renderModes(res.modes)}
+  toast(cl+': '+(enable?'ON':'OFF'));
+ }catch(e){toast('Failed to set DTS: '+e.message,1);loadModes()}
+}
+
 /* Shell */
-function setTab(t){tab=t;ls.set('cytv_tab',t);$$('.view').forEach(v=>v.hidden=v.id!=='v-'+t);$$('.nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));if(t==='tv')renderTv(last);if(t==='cast')loadWpCount()}
+function setTab(t){tab=t;ls.set('cytv_tab',t);$$('.view').forEach(v=>v.hidden=v.id!=='v-'+t);$$('.nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));if(t==='tv'){renderTv(last);loadModes()}if(t==='cast')loadWpCount()}
 $$('.nav button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
 $('#q').oninput=renderApps;
 $('#pform').onsubmit=e=>{e.preventDefault();const p=$('#pin').value.replace(/\D/g,'');p.length===6?doPair(p):$('#pmsg').textContent='The PIN has 6 digits.'};
-function boot(){setTab(tab);loadApps();loadWpCount();poll();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)poll()},5000)}
+function boot(){setTab(tab);loadApps();loadWpCount();loadModes();poll();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)poll()},5000)}
 setMode(ls.get('cytv_mode')==='nav'?'nav':'media');
 renderRecent();
 if(DEMO){token='demo';$('#demo').hidden=false;boot()}
