@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
@@ -14,6 +15,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
 import android.os.SystemClock;
+import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -23,9 +25,12 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -111,6 +116,10 @@ public class BridgeHttpServer extends NanoHTTPD {
                 return handleStats();
             } else if (Method.POST.equals(method) && "/key".equals(uri)) {
                 return handleKey(session);
+            } else if (Method.POST.equals(method) && "/wallpaper".equals(uri)) {
+                return handleUploadWallpaper(session);
+            } else if (Method.GET.equals(method) && "/wallpapers".equals(uri)) {
+                return handleGetWallpapers();
             } else if (Method.GET.equals(method) && "/spike/adb/status".equals(uri)) {
                 return handleSpikeAdbStatus();
             } else if (Method.POST.equals(method) && "/spike/adb/connect".equals(uri)) {
@@ -585,6 +594,177 @@ public class BridgeHttpServer extends NanoHTTPD {
         SharedPreferences prefs = context.getSharedPreferences("boot_intro_prefs", Context.MODE_PRIVATE);
         prefs.edit().putBoolean("app_launched_persisted", true).commit();
         Log.d(TAG, "Recorded app_launched_persisted = true in boot_intro_prefs");
+    }
+
+    private Response handleUploadWallpaper(IHTTPSession session) {
+        String body = readBody(session);
+        if (body == null || body.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing request body");
+        }
+
+        String fileName = null;
+        String base64Data = null;
+        try {
+            JSONObject json = new JSONObject(body);
+            if (json.has("name")) fileName = json.getString("name");
+            if (json.has("data")) base64Data = json.getString("data");
+        } catch (JSONException e) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid JSON: " + e.getMessage());
+        }
+
+        if (base64Data == null || base64Data.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing 'data' parameter");
+        }
+
+        // 1. Decode Base64 bytes
+        byte[] imageBytes;
+        try {
+            imageBytes = Base64.decode(base64Data, Base64.DEFAULT);
+        } catch (IllegalArgumentException e) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid base64 encoding");
+        }
+
+        // 2. Check size (max 10 MB CleanYourTV limit)
+        if (imageBytes.length == 0 || imageBytes.length > 10 * 1024 * 1024) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Wallpaper size must be between 1 byte and 10 MB (got " + imageBytes.length + " bytes)");
+        }
+
+        // 3. Format validation (Magic bytes: JPEG 0xFFD8FF, PNG 0x89504E47)
+        boolean isJpeg = imageBytes.length >= 3 && (imageBytes[0] & 0xFF) == 0xFF && (imageBytes[1] & 0xFF) == 0xD8 && (imageBytes[2] & 0xFF) == 0xFF;
+        boolean isPng = imageBytes.length >= 8 && (imageBytes[0] & 0xFF) == 0x89 && (imageBytes[1] & 0xFF) == 0x50 && (imageBytes[2] & 0xFF) == 0x4E && (imageBytes[3] & 0xFF) == 0x47;
+
+        if (!isJpeg && !isPng) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Unsupported image format: Only JPG/JPEG and PNG are allowed (WebP and others rejected)");
+        }
+
+        // 4. Resolution check using BitmapFactory.Options
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, opts);
+        int width = opts.outWidth;
+        int height = opts.outHeight;
+
+        if (width < 3840 || height < 2160) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Image resolution (" + width + "x" + height + ") is below 4K (minimum 3840x2160 required)");
+        }
+
+        // 5. Ensure wallpapers folder exists
+        File wallpapersDir = new File(context.getExternalFilesDir(null), "wallpapers");
+        if (!wallpapersDir.exists()) {
+            wallpapersDir.mkdirs();
+        }
+
+        // 6. Duplicate detection via MD5 checksum
+        String uploadMd5 = md5Hex(imageBytes);
+        File[] existing = wallpapersDir.listFiles();
+        if (existing != null) {
+            for (File f : existing) {
+                if (f.isFile() && f.length() == imageBytes.length) {
+                    byte[] existingBytes = readFileBytes(f);
+                    if (existingBytes != null && uploadMd5.equals(md5Hex(existingBytes))) {
+                        return errorResponse(new CustomStatus(409, "Conflict"), "Wallpaper already exists on TV (" + f.getName() + ")");
+                    }
+                }
+            }
+        }
+
+        // 7. Sanitize filename
+        String cleanName = sanitizeWallpaperName(fileName, isJpeg ? ".jpg" : ".png");
+        File targetFile = new File(wallpapersDir, cleanName);
+        if (targetFile.exists()) {
+            cleanName = System.currentTimeMillis() + "_" + cleanName;
+            targetFile = new File(wallpapersDir, cleanName);
+        }
+
+        // 8. Write file to wallpapers directory
+        try (FileOutputStream fos = new FileOutputStream(targetFile)) {
+            fos.write(imageBytes);
+            fos.flush();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to write wallpaper file", e);
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Failed to write wallpaper to disk: " + e.getMessage());
+        }
+
+        targetFile.setReadable(true, false);
+        Log.i(TAG, "New 4K wallpaper saved: " + cleanName + " (" + width + "x" + height + ", " + imageBytes.length + " bytes)");
+
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", "ok");
+            resp.put("filename", cleanName);
+            resp.put("width", width);
+            resp.put("height", height);
+            resp.put("size", imageBytes.length);
+        } catch (JSONException ignored) {}
+        return jsonResponse(Response.Status.OK, resp.toString());
+    }
+
+    private Response handleGetWallpapers() {
+        File wallpapersDir = new File(context.getExternalFilesDir(null), "wallpapers");
+        File[] files = wallpapersDir.exists() ? wallpapersDir.listFiles() : null;
+        JSONArray arr = new JSONArray();
+        int count = 0;
+        if (files != null) {
+            for (File f : files) {
+                String n = f.getName().toLowerCase(Locale.ROOT);
+                if (f.isFile() && f.length() > 0 && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png"))) {
+                    count++;
+                    JSONObject item = new JSONObject();
+                    try {
+                        item.put("name", f.getName());
+                        item.put("size", f.length());
+                    } catch (JSONException ignored) {}
+                    arr.put(item);
+                }
+            }
+        }
+        JSONObject res = new JSONObject();
+        try {
+            res.put("count", count);
+            res.put("wallpapers", arr);
+        } catch (JSONException ignored) {}
+        return jsonResponse(Response.Status.OK, res.toString());
+    }
+
+    private static String md5Hex(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] hash = md.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static byte[] readFileBytes(File f) {
+        try (FileInputStream fis = new FileInputStream(f)) {
+            byte[] buf = new byte[(int) f.length()];
+            int read = fis.read(buf);
+            return read == buf.length ? buf : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String sanitizeWallpaperName(String name, String fallbackExt) {
+        if (name == null || name.trim().isEmpty()) {
+            return "wallpaper_" + System.currentTimeMillis() + fallbackExt;
+        }
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        String ext = dot > 0 ? name.substring(dot).toLowerCase(Locale.ROOT) : fallbackExt;
+        if (!ext.equals(".jpg") && !ext.equals(".jpeg") && !ext.equals(".png")) {
+            ext = fallbackExt;
+        }
+        String cleanBase = base.replaceAll("[^A-Za-z0-9_.-]", "_").replaceAll("_+", "_");
+        if (cleanBase.isEmpty() || "_".equals(cleanBase)) {
+            cleanBase = "wallpaper_" + System.currentTimeMillis();
+        }
+        return cleanBase + ext;
     }
 
     private String readBody(IHTTPSession session) {

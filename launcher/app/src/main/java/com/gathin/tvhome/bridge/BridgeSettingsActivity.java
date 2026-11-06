@@ -74,6 +74,9 @@ public class BridgeSettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         boolean enabled = BridgeConfig.isEnabled(this);
+        if (enabled) {
+            BridgeService.start(this);
+        }
         BridgeConfig.setPairingScreenVisible(enabled);
         updateDisplay();
         tickerHandler.post(tickerRunnable);

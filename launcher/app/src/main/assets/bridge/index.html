@@ -142,6 +142,16 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
   </div>
   <div id="recent"></div>
   <p class="mu c sm" style="margin-top:18px">The TV opens the link in an installed app that supports it. If more than one can, you choose.</p>
+
+  <div class="box" style="margin-top:22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="font-size:15px">4K TV Wallpaper</b>
+      <span class="mu sm" id="wp-stat">Checking…</span>
+    </div>
+    <p class="mu sm" style="margin-bottom:14px">Select a 4K image (.jpg or .png, min 3840×2160) from your phone to add to your TV's launcher rotation.</p>
+    <input type="file" id="wp-file" accept="image/jpeg,image/png" hidden>
+    <button class="btn p" id="wp-pick" style="width:100%"><svg class="i" style="margin-right:6px"><path d="M12 4v16m-8-8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Upload 4K Wallpaper</button>
+  </div>
 </section>
 
 <section class="view" id="v-tv" hidden><div id="tv"><p class="mu c">Loading TV details…</p></div></section>
@@ -188,6 +198,8 @@ const DEMO_APPS=[{name:'TizenTube Cobalt',package:'demo.tt',isDock:true,dockPos:
 async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?JSON.parse(o.body):{};
  if(p==='/apps')return{apps:DEMO_APPS};
  if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
+ if(p==='/wallpapers')return{count:3,wallpapers:[]};
+ if(p==='/wallpaper')return{status:'ok',filename:'demo_4k.jpg'};
  if(p==='/launch'&&b.url&&!b.package&&!/youtu/.test(b.url)){const e=new Error('choose');e.status=409;e.data={candidates:[{package:'demo.tt',label:'TizenTube Cobalt'},{package:'demo.vlc',label:'VLC'}]};throw e}
  return{status:'ok'}}
 
@@ -262,12 +274,43 @@ $('#paste').onclick=async()=>{try{$('#url').value=(await navigator.clipboard.rea
 $('#send').onclick=()=>cast();
 $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
 
+/* 4K Wallpaper upload */
+async function loadWpCount(){try{const r=await api('/wallpapers');$('#wp-stat').textContent=(r.count||0)+' active on TV'}catch(e){}}
+const wpIn=$('#wp-file'),wpBtn=$('#wp-pick');
+if(wpBtn&&wpIn){
+ wpBtn.onclick=()=>wpIn.click();
+ wpIn.onchange=async()=>{
+  const file=wpIn.files[0];if(!file)return;wpIn.value='';
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext!=='jpg'&&ext!=='jpeg'&&ext!=='png')return toast('Only JPG and PNG images allowed',1);
+  if(file.size>10*1024*1024)return toast('Image exceeds 10 MB limit',1);
+  toast('Checking 4K resolution…');
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=async()=>{
+   URL.revokeObjectURL(url);
+   if(img.naturalWidth<3840||img.naturalHeight<2160)return toast(`Not 4K: ${img.naturalWidth}×${img.naturalHeight} (min 3840×2160 required)`,1);
+   toast('Uploading 4K wallpaper to TV…');
+   const reader=new FileReader();
+   reader.onload=async()=>{
+    try{
+     const b64=reader.result.split(',')[1];
+     const res=await api('/wallpaper',{method:'POST',body:JSON.stringify({name:file.name,data:b64})});
+     toast('4K Wallpaper added to TV!');loadWpCount();
+    }catch(e){toast(e.message||'Upload failed',1)}
+   };
+   reader.readAsDataURL(file);
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('Could not inspect image',1)};
+  img.src=url;
+ };
+}
+
 /* Shell */
-function setTab(t){tab=t;ls.set('cytv_tab',t);$$('.view').forEach(v=>v.hidden=v.id!=='v-'+t);$$('.nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));if(t==='tv')renderTv(last)}
+function setTab(t){tab=t;ls.set('cytv_tab',t);$$('.view').forEach(v=>v.hidden=v.id!=='v-'+t);$$('.nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));if(t==='tv')renderTv(last);if(t==='cast')loadWpCount()}
 $$('.nav button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
 $('#q').oninput=renderApps;
 $('#pform').onsubmit=e=>{e.preventDefault();const p=$('#pin').value.replace(/\D/g,'');p.length===6?doPair(p):$('#pmsg').textContent='The PIN has 6 digits.'};
-function boot(){setTab(tab);loadApps();poll();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)poll()},5000)}
+function boot(){setTab(tab);loadApps();loadWpCount();poll();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)poll()},5000)}
 setMode(ls.get('cytv_mode')==='nav'?'nav':'media');
 renderRecent();
 if(DEMO){token='demo';$('#demo').hidden=false;boot()}
