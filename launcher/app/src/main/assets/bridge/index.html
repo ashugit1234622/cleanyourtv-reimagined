@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1d24">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Clean Your TV</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+:root{--bg:#0f1d24;--sf:#17303a;--ln:#2a4651;--tx:#e8f1ee;--mu:#8fa9a8;--ac:#ffb454;--on:#2b1a00;--ok:#5fd3a0;--bad:#ff7a6b;color-scheme:dark;padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:light){:root{--bg:#eef3ef;--sf:#fff;--ln:#cfdcd6;--tx:#12262c;--mu:#5d7576;--ac:#d98200;--on:#fff;--ok:#1f9d6b;--bad:#d4432f;color-scheme:light}}
+html,body{margin:0;background:var(--bg)}
+body{font:15px/1.45 ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);min-height:100vh}
+.wrap{max-width:560px;margin:0 auto;padding:18px 18px calc(96px + env(safe-area-inset-bottom,0px))}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+h1{font-size:25px;line-height:1.1;margin:0;font-weight:750;letter-spacing:-.02em}
+.mu{color:var(--mu)}.c{text-align:center}.sm{font-size:13px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:99px;background:var(--sf);border:1px solid var(--ln);font-size:12.5px;color:var(--mu);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}.on .dot{background:var(--ok)}
+.note{padding:10px 14px;border-radius:12px;border:1px dashed var(--ln);color:var(--mu);font-size:13px;margin-bottom:14px}
+.in{width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--ln);background:var(--sf);color:var(--tx);font:inherit;outline:none;resize:none}
+.in:focus-visible{border-color:var(--ac)}
+h2{font-size:13px;font-weight:650;color:var(--mu);margin:24px 2px 12px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 12px}
+.tile{all:unset;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer;font-size:12px;min-width:0}
+.tile:focus-visible .ico{outline:2px solid var(--ac);outline-offset:3px}
+.ico{width:100%;aspect-ratio:1;border-radius:24%;display:grid;place-items:center;font-size:26px;font-weight:750;color:#fff;overflow:hidden;transition:transform .12s}
+.ico img{width:100%;height:100%;object-fit:cover}
+.tile:active .ico{transform:scale(.9)}
+.tile span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.wheel{position:relative;width:min(80vw,310px);aspect-ratio:1;margin:10px auto 14px;border-radius:50%;background:var(--sf);border:1px solid var(--ln)}
+.wheel button{all:unset;position:absolute;display:grid;place-items:center;width:26%;height:26%;border-radius:50%;cursor:pointer;color:var(--tx)}
+.wheel button:active{background:var(--ln)}
+.wheel button:focus-visible{outline:2px solid var(--ac)}
+.wheel .u{top:6%;left:37%}.wheel .d{bottom:6%;left:37%}.wheel .l{left:6%;top:37%}.wheel .r{right:6%;top:37%}
+.wheel .m{left:31%;top:31%;width:38%;height:38%;background:var(--ac);color:var(--on)}
+.wheel .m:active{background:var(--ac);filter:brightness(.88)}
+.wheel .m svg{width:38px;height:38px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+.btn{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;padding:15px 18px;border-radius:99px;font-weight:650;cursor:pointer;border:1px solid var(--ln);background:var(--sf);text-align:center}
+.btn:active{opacity:.75}.btn:focus-visible{outline:2px solid var(--ac)}
+.btn.p{background:var(--ac);color:var(--on);border-color:var(--ac)}
+.btn svg{width:22px;height:22px}
+.box{padding:16px;border-radius:18px;background:var(--sf);border:1px solid var(--ln)}
+.box .duo{margin-top:12px}
+.rec{all:unset;display:block;width:100%;padding:12px 4px;border-bottom:1px solid var(--ln);color:var(--mu);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rc{padding:18px 12px;text-align:center;border-radius:18px;background:var(--sf);border:1px solid var(--ln)}
+.ring{position:relative;width:104px;height:104px;margin:0 auto 10px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.trk,.val{fill:none;stroke-width:9}.trk{stroke:var(--ln)}
+.val{stroke:var(--ac);stroke-linecap:round;transition:stroke-dasharray .6s}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:21px}
+.rows{margin-top:12px;border-radius:18px;background:var(--sf);border:1px solid var(--ln)}
+.rw{display:flex;justify-content:space-between;gap:12px;padding:14px 16px}.rw+.rw{border-top:1px solid var(--ln)}
+.nav{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--ln)}
+.nav button{all:unset;flex:1;max-width:120px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;border-radius:14px;font-size:12px;color:var(--mu);cursor:pointer}
+.nav button.act{color:var(--ac);background:var(--sf)}
+.nav button:focus-visible{outline:2px solid var(--ac)}
+.nav svg{width:24px;height:24px}
+.ov{position:fixed;inset:0;z-index:30;display:none;background:var(--bg);padding:env(safe-area-inset-top,0px) 24px 0;align-items:center;justify-content:center}
+.ov.show{display:flex}
+.pin{font-size:34px;letter-spacing:.35em;text-align:center;padding-left:.35em}
+#sheet{background:rgba(0,0,0,.55);align-items:flex-end;padding:0}
+#sheet .in{display:none}
+.sb{width:100%;max-width:560px;margin:0 auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom,0px));background:var(--bg);border-radius:24px 24px 0 0;border:1px solid var(--ln)}
+.sb .btn{width:100%;margin-top:10px}
+.chk{display:flex;gap:10px;align-items:center;margin:14px 2px 4px;color:var(--mu);font-size:14px}
+.chk input{width:20px;height:20px;accent-color:var(--ac)}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translate(-50%,-140%);z-index:40;padding:11px 18px;border-radius:99px;background:var(--tx);color:var(--bg);font-weight:600;font-size:14px;transition:transform .25s;max-width:90vw}
+#toast.show{transform:translate(-50%,0)}#toast.bad{background:var(--bad);color:#fff}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+.seg{display:flex;max-width:260px;margin:0 auto 14px;padding:4px;border-radius:99px;background:var(--sf);border:1px solid var(--ln)}
+.seg button{all:unset;flex:1;text-align:center;padding:10px 0;border-radius:99px;font-weight:650;color:var(--mu);cursor:pointer}
+.seg button.act{background:var(--ac);color:var(--on)}
+.seg button:focus-visible{outline:2px solid var(--ac)}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+.trio .btn{flex-direction:column;gap:4px;padding:13px 6px;font-size:13px;border-radius:22px}
+.ok{font-size:26px;font-weight:800;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+<symbol id="i-rem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-cast" viewBox="0 0 24 24"><path d="M3 8V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M3 12a9 9 0 0 1 9 9M3 16a5 5 0 0 1 5 5"/><path d="M3 20.5h.01"/></symbol>
+<symbol id="i-tv" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-pp" viewBox="0 0 24 24"><path d="M3 5l9 7-9 7z"/><path d="M16 5v14M21 5v14"/></symbol>
+<symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 5L9 12l10 7z"/><path d="M5 5v14"/></symbol>
+<symbol id="i-next" viewBox="0 0 24 24"><path d="M5 5l10 7-10 7z"/><path d="M19 5v14"/></symbol>
+<symbol id="i-vup" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></symbol>
+<symbol id="i-vdn" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9z"/><path d="M16 8.5a5 5 0 0 1 0 7"/></symbol>
+<symbol id="i-mute" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9z"/><path d="M17 9l5 6M22 9l-5 6"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7"/></symbol>
+<symbol id="i-dn" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></symbol>
+<symbol id="i-lf" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+<symbol id="i-rt" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+<header>
+  <h1>Clean Your TV</h1>
+  <div class="pill" id="pill"><i class="dot"></i><span id="ptxt">Connecting…</span></div>
+</header>
+<div class="note" id="demo" hidden>Preview with sample apps. Open this page from your TV’s address to control the real TV.</div>
+
+<section class="view" id="v-apps">
+  <input id="q" class="in" type="search" placeholder="Search apps" autocomplete="off">
+  <div id="applist"><p class="mu c">Loading apps…</p></div>
+</section>
+
+<section class="view" id="v-remote" hidden>
+  <div class="seg" role="group" aria-label="Remote mode"><button data-m="media">Media</button><button data-m="nav">Arrows</button></div>
+  <div class="wheel">
+    <button class="u k" data-k="volume_up"></button>
+    <button class="l k" data-k="prev"></button>
+    <button class="m k" data-k="play_pause"></button>
+    <button class="r k" data-k="next"></button>
+    <button class="d k" data-k="volume_down"></button>
+  </div>
+  <p class="mu c sm" id="hint"></p>
+  <div class="trio">
+    <button class="btn k" data-k="back"><svg class="i"><use href="#i-back"/></svg>Back</button>
+    <button class="btn k" data-k="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
+    <button class="btn k" data-k="volume_mute"><svg class="i"><use href="#i-mute"/></svg>Mute</button>
+  </div>
+  <div class="duo vols" hidden>
+    <button class="btn k" data-k="volume_down" data-r="1"><svg class="i"><use href="#i-vdn"/></svg>Volume down</button>
+    <button class="btn k" data-k="volume_up" data-r="1"><svg class="i"><use href="#i-vup"/></svg>Volume up</button>
+  </div>
+</section>
+
+<section class="view" id="v-cast" hidden>
+  <div class="box">
+    <textarea id="url" class="in" rows="3" placeholder="Paste a video or page link"></textarea>
+    <div class="duo"><button class="btn" id="paste">Paste</button><button class="btn p" id="send">Send to TV</button></div>
+  </div>
+  <div id="recent"></div>
+  <p class="mu c sm" style="margin-top:18px">The TV opens the link in an installed app that supports it. If more than one can, you choose.</p>
+</section>
+
+<section class="view" id="v-tv" hidden><div id="tv"><p class="mu c">Loading TV details…</p></div></section>
+</div>
+
+<nav class="nav">
+  <button data-t="apps"><svg class="i"><use href="#i-apps"/></svg>Apps</button>
+  <button data-t="remote"><svg class="i"><use href="#i-rem"/></svg>Remote</button>
+  <button data-t="cast"><svg class="i"><use href="#i-cast"/></svg>Send link</button>
+  <button data-t="tv"><svg class="i"><use href="#i-tv"/></svg>TV</button>
+</nav>
+
+<div class="ov" id="pair">
+  <form id="pform" style="width:100%;max-width:340px;text-align:center">
+    <h1 style="margin-bottom:10px">Pair with your TV</h1>
+    <p class="mu" id="pmsg">Enter the 6-digit PIN shown on your TV.</p>
+    <input id="pin" class="in pin" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="PIN">
+    <button class="btn p" style="width:100%;margin-top:14px" type="submit">Pair</button>
+  </form>
+</div>
+
+<div class="ov" id="sheet">
+  <div class="sb">
+    <h1 style="font-size:19px">Open with</h1>
+    <p class="mu sm" style="margin:4px 0 0">More than one app can open this link.</p>
+    <div id="sbody"></div>
+    <label class="chk"><input type="checkbox" id="rem">Always use this app for this site</label>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const DEMO=location.protocol==='file:'||/[?&]demo\b/.test(location.search);
+let token=ls.get('cytv_token')||'',apps=[],tab=ls.get('cytv_tab')||'apps',timer,last=null;
+let recent=(()=>{try{return JSON.parse(ls.get('cytv_recent')||'[]')}catch(e){return[]}})();
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const buzz=()=>navigator.vibrate&&navigator.vibrate(12);
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='show'+(bad?' bad':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='',2300)}
+
+/* Sample data for preview mode */
+const DEMO_APPS=[{name:'TizenTube Cobalt',package:'demo.tt',isDock:true,dockPos:0},{name:'NetMirror',package:'demo.nm',isDock:true,dockPos:1,launchOnly:true},{name:'VLC',package:'demo.vlc'},{name:'Plex',package:'demo.plex'},{name:'Files',package:'demo.files'},{name:'Settings',package:'demo.set'}];
+async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?JSON.parse(o.body):{};
+ if(p==='/apps')return{apps:DEMO_APPS};
+ if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
+ if(p==='/launch'&&b.url&&!b.package&&!/youtu/.test(b.url)){const e=new Error('choose');e.status=409;e.data={candidates:[{package:'demo.tt',label:'TizenTube Cobalt'},{package:'demo.vlc',label:'VLC'}]};throw e}
+ return{status:'ok'}}
+
+async function api(p,o={}){
+ if(DEMO)return demo(p,o);
+ const h={'Content-Type':'application/json'};if(token)h.Authorization='Bearer '+token;
+ const r=await fetch(p,{...o,headers:h});
+ if(r.status===401&&p!=='/pair'){showPair('Session ended. Enter the PIN shown on your TV.');throw new Error('auth')}
+ let j={};try{j=await r.json()}catch(e){}
+ if(!r.ok){const e=new Error(j.message||'Error '+r.status);e.status=r.status;e.data=j;throw e}
+ return j}
+
+/* Pairing */
+function showPair(m){$('#pair').classList.add('show');$('#pmsg').textContent=m||'Enter the 6-digit PIN shown on your TV.';clearInterval(timer)}
+async function doPair(pin){try{const r=await api('/pair',{method:'POST',body:JSON.stringify({pin,deviceName:'My phone'})});
+ token=r.token;ls.set('cytv_token',token);$('#pair').classList.remove('show');$('#pin').value='';boot()}
+ catch(e){showPair(e.message||'Pairing failed. Check the PIN on your TV.')}}
+
+/* Status and stats */
+function online(b,s){$('#pill').classList.toggle('on',b);$('#ptxt').textContent=b?'Connected'+(s&&s.wifi&&s.wifi.ip?' · '+s.wifi.ip:''):'TV unreachable'}
+async function poll(){try{const s=await api('/stats');last=s;online(true,s);if(tab==='tv')renderTv(s)}catch(e){if(e.message!=='auth')online(false)}}
+function ring(p){const c=276.46,v=Math.max(0,Math.min(100,p||0));return`<div class="ring"><svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="val" cx="50" cy="50" r="44" stroke-dasharray="${(c*v/100).toFixed(1)} ${c}"/></svg><b>${Math.round(v)}%</b></div>`}
+const row=(a,b)=>`<div class="rw"><span class="mu">${a}</span><span>${esc(b??'–')}</span></div>`;
+function renderTv(s){if(!s)return;const r=s.ram||{},d=s.storage||{},y=s.system||{},w=s.wifi||{};
+ const bars='▂▄▆█'.slice(0,w.rssi>-55?4:w.rssi>-65?3:w.rssi>-75?2:1);
+ $('#tv').innerHTML=`<div class="rings"><div class="rc">${ring(r.percentUsed)}<b>Memory</b><br><span class="mu sm">${r.usedMb??'–'} of ${r.totalMb??'–'} MB</span></div><div class="rc">${ring(d.percentUsed)}<b>Storage</b><br><span class="mu sm">${d.usedGb??'–'} of ${d.totalGb??'–'} GB</span></div></div><div class="rows">${row('Model',y.deviceModel)}${row('Android',y.androidVersion)}${row('Uptime',y.uptimeFormatted)}${row('Wi‑Fi signal',w.rssi!=null?w.rssi+' dBm '+bars:'–')}${row('TV address',w.ip)}</div><button class="btn" id="forget" style="width:100%;margin-top:16px">Forget this phone</button>`;
+ $('#forget').onclick=()=>{ls.del('cytv_token');token='';showPair('Phone forgotten. Enter a PIN to pair again.')}}
+
+/* Apps */
+const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
+const cache={};
+function tile(a){const h=hue(a.package);return`<button class="tile" data-p="${esc(a.package)}"><div class="ico" style="background:hsl(${h} 45% 42%)">${esc((a.name[0]||'?').toUpperCase())}</div><span>${esc(a.name)}</span></button>`}
+async function icon(a,el){if(!a.iconUrl||DEMO)return;try{if(!cache[a.package]){const r=await fetch(a.iconUrl,{headers:{Authorization:'Bearer '+token}});if(!r.ok)return;cache[a.package]=URL.createObjectURL(await r.blob())}el.innerHTML='<img alt="" src="'+cache[a.package]+'">';el.style.background='none'}catch(e){}}
+function renderApps(){const q=$('#q').value.trim().toLowerCase(),f=apps.filter(a=>a.name.toLowerCase().includes(q));
+ const dock=f.filter(a=>a.isDock).sort((a,b)=>(a.dockPos??99)-(b.dockPos??99)),rest=f.filter(a=>!a.isDock);
+ let h='';
+ if(dock.length)h+='<h2>On your dock</h2><div class="grid">'+dock.map(tile).join('')+'</div>';
+ if(rest.length)h+='<h2>All apps</h2><div class="grid">'+rest.map(tile).join('')+'</div>';
+ if(!f.length)h='<p class="mu c" style="margin-top:28px">'+(apps.length?'No apps match your search.':'No apps found on the TV.')+'</p>';
+ $('#applist').innerHTML=h;
+ $$('#applist .tile').forEach(t=>{const a=apps.find(x=>x.package===t.dataset.p);t.onclick=()=>launch(a);icon(a,t.firstChild)})}
+async function loadApps(){try{apps=(await api('/apps')).apps||[];renderApps()}catch(e){if(e.message!=='auth')$('#applist').innerHTML='<p class="mu c" style="margin-top:28px">Couldn’t load apps. Check that the TV bridge is on, then reload.</p>'}}
+async function launch(a){buzz();try{await api('/launch',{method:'POST',body:JSON.stringify({package:a.package})});toast('Opening '+a.name)}catch(e){if(e.message!=='auth')toast('Couldn’t open '+a.name,1)}}
+
+/* Remote */
+const MODES={media:{u:['volume_up','i-vup',1],d:['volume_down','i-vdn',1],l:['prev','i-prev',0],r:['next','i-next',0],m:['play_pause','i-pp',0],hint:'Top and bottom change volume. Sides skip. The centre plays or pauses.'},nav:{u:['up','i-up',1],d:['down','i-dn',1],l:['left','i-lf',1],r:['right','i-rt',1],m:['ok','',0],hint:'Move around any app. Hold an arrow to keep moving. The centre selects.'}};
+let mode='media',warned=0;
+function setMode(m){mode=m;ls.set('cytv_mode',m);const c=MODES[m];
+ ['u','d','l','r','m'].forEach(p=>{const b=$('.wheel .'+p),v=c[p];b.dataset.k=v[0];if(v[2])b.dataset.r='1';else delete b.dataset.r;
+  b.innerHTML=v[1]?'<svg class="i"><use href="#'+v[1]+'"/></svg>':'<span class="ok">OK</span>';b.setAttribute('aria-label',v[0].replace('_',' '))});
+ $('#hint').textContent=c.hint;$('.vols').hidden=m!=='nav';$$('.seg button').forEach(x=>x.classList.toggle('act',x.dataset.m===m))}
+$$('.k').forEach(b=>{let t,iv;
+ const go=()=>{buzz();api('/key',{method:'POST',body:JSON.stringify({action:b.dataset.k})}).catch(e=>{if(e.message==='auth')return;
+  if(e.status===501||e.status===503){if(!warned){warned=1;toast('Arrow keys need setup on the TV first. Check Phone Bridge settings.',1)}}else toast('Couldn’t reach the TV',1)})},
+ stop=()=>{clearTimeout(t);clearInterval(iv)};
+ b.addEventListener('pointerdown',()=>{go();if(b.dataset.r)t=setTimeout(()=>iv=setInterval(go,mode==='nav'?240:180),420)});
+ ['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,stop))});
+$$('.seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+
+/* Send link */
+function renderRecent(){$('#recent').innerHTML=recent.length?'<h2>Recent links</h2>'+recent.map((u,i)=>`<button class="rec" data-i="${i}">${esc(u)}</button>`).join(''):'';$$('.rec').forEach(b=>b.onclick=()=>{$('#url').value=recent[b.dataset.i]})}
+async function cast(pkg,remember){const url=$('#url').value.trim();
+ if(!/^https?:\/\/\S+$/i.test(url))return toast('Paste a valid link starting with http',1);
+ try{await api('/launch',{method:'POST',body:JSON.stringify({url,package:pkg,remember:!!remember})});
+  toast('Sent to TV');closeSheet();recent=[url,...recent.filter(x=>x!==url)].slice(0,5);ls.set('cytv_recent',JSON.stringify(recent));renderRecent()}
+ catch(e){if(e.message==='auth')return;
+  if(e.status===409)return openSheet((e.data&&(e.data.candidates||e.data.apps))||[]);
+  toast(e.status===422?'No installed app can open this link':e.message,1)}}
+function openSheet(c){$('#sbody').innerHTML=c.map(a=>`<button class="btn so" data-p="${esc(a.package)}">${esc(a.label||a.name||a.package)}</button>`).join('');$$('.so').forEach(b=>b.onclick=()=>cast(b.dataset.p,$('#rem').checked));$('#sheet').classList.add('show')}
+function closeSheet(){$('#sheet').classList.remove('show')}
+$('#paste').onclick=async()=>{try{$('#url').value=(await navigator.clipboard.readText()).trim()}catch(e){toast('Paste is blocked here. Long-press the box to paste.',1)}};
+$('#send').onclick=()=>cast();
+$('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
+
+/* Shell */
+function setTab(t){tab=t;ls.set('cytv_tab',t);$$('.view').forEach(v=>v.hidden=v.id!=='v-'+t);$$('.nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));if(t==='tv')renderTv(last)}
+$$('.nav button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+$('#q').oninput=renderApps;
+$('#pform').onsubmit=e=>{e.preventDefault();const p=$('#pin').value.replace(/\D/g,'');p.length===6?doPair(p):$('#pmsg').textContent='The PIN has 6 digits.'};
+function boot(){setTab(tab);loadApps();poll();clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)poll()},5000)}
+setMode(ls.get('cytv_mode')==='nav'?'nav':'media');
+renderRecent();
+if(DEMO){token='demo';$('#demo').hidden=false;boot()}
+else{const q=new URLSearchParams(location.search).get('pin');
+ if(q){history.replaceState(null,'',location.pathname);doPair(q)}
+ else if(token)boot();else{setTab(tab);showPair()}}
+</script>
+</body>
+</html>

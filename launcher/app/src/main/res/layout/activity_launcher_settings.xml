@@ -178,6 +178,26 @@
             android:id="@+id/tvSettingsChoice"
             style="@style/SettingsRow"
             android:layout_marginTop="18dp"
-            android:text="@string/tv_settings" />
+            android:text="@string/tv_settings"
+            android:nextFocusDown="@+id/phoneBridgeChoice" />
+
+        <TextView
+            android:id="@+id/phoneBridgeChoice"
+            style="@style/SettingsRow"
+            android:layout_marginTop="18dp"
+            android:text="@string/phone_bridge_settings"
+            android:nextFocusUp="@+id/tvSettingsChoice"
+            android:nextFocusDown="@+id/phoneBridgeChoice"
+            android:nextFocusLeft="@+id/phoneBridgeChoice"
+            android:nextFocusRight="@+id/phoneBridgeChoice" />
+
+        <TextView
+            android:id="@+id/phoneBridgeHelp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:text="@string/phone_bridge_help"
+            android:textColor="#FFACB8C1"
+            android:textSize="14sp" />
     </LinearLayout>
 </ScrollView>

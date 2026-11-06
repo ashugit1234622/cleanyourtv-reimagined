@@ -201,4 +201,15 @@
     <string name="intro_messages_all">Titles and tips</string>
     <string name="intro_messages_titles">Titles only</string>
     <string name="intro_messages_off">Off</string>
+
+    <!-- Phone Bridge -->
+    <string name="phone_bridge_settings">Phone Bridge</string>
+    <string name="phone_bridge_help">Control this TV and launch apps from a phone on the same Wi-Fi.</string>
+    <string name="phone_bridge_title">Phone Bridge</string>
+    <string name="phone_bridge_toggle_on">Turn Phone Bridge Off</string>
+    <string name="phone_bridge_toggle_off">Turn Phone Bridge On</string>
+    <string name="phone_bridge_status_running">Phone Bridge is Running</string>
+    <string name="phone_bridge_status_stopped">Phone Bridge is Stopped</string>
+    <string name="phone_bridge_unpair_all">Unpair all devices</string>
+    <string name="phone_bridge_clear_remembered">Clear remembered apps</string>
 </resources>

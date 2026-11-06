@@ -212,6 +212,8 @@ public final class LauncherSettingsActivity extends Activity {
                 open(new Intent(this, HomeSettingsActivity.class)));
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
+        findViewById(R.id.phoneBridgeChoice).setOnClickListener(v ->
+                open(new Intent(this, com.gathin.tvhome.bridge.BridgeSettingsActivity.class)));
         refresh();
         if (config.launcherSettingsButton) reorderChoice.requestFocus();
         else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
