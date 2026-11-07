@@ -67,6 +67,19 @@ public class WallpaperRotationTest {
     }
 
     @Test
+    public void sequentialGoesBackInSortedOrderAndWraps() {
+        List<File> images = Arrays.asList(new File("a.jpg"), new File("b.jpg"), new File("c.jpg"));
+        assertEquals("c.jpg", WallpaperRotation.previous(images, "a.jpg").getName());
+        assertEquals("a.jpg", WallpaperRotation.previous(images, "b.jpg").getName());
+        assertEquals("b.jpg", WallpaperRotation.previous(images, "c.jpg").getName());
+        assertEquals("c.jpg", WallpaperRotation.previous(images, "").getName());
+        assertEquals("c.jpg", WallpaperRotation.previous(images, "gone.jpg").getName());
+        assertEquals("only.jpg", WallpaperRotation.previous(
+                Collections.singletonList(new File("only.jpg")), "only.jpg").getName());
+        assertNull(WallpaperRotation.previous(Collections.emptyList(), ""));
+    }
+
+    @Test
     public void pickUsesTheRequestedOrder() {
         List<File> images = Arrays.asList(new File("a.jpg"), new File("b.jpg"), new File("c.jpg"));
         Random random = new Random(1);

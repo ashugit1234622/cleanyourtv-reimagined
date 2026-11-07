@@ -11,9 +11,12 @@ import org.json.JSONObject;
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class BridgeModesManager {
     private static final String TAG = "BridgeModesManager";
+    private static final ExecutorService sAdbExecutor = Executors.newSingleThreadExecutor();
     private static ClassLoader sMitvClassLoader;
 
     public static final Map<Integer, String> PICTURE_MODES = new LinkedHashMap<>();
@@ -136,6 +139,15 @@ public final class BridgeModesManager {
 
     public static boolean setPictureMode(Context context, int modeId) {
         boolean ok = false;
+        // 1. Update Android Settings.Global for local apps and QuickSettings
+        try {
+            Settings.Global.putInt(context.getContentResolver(), "picture_mode", modeId);
+            ok = true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to update Settings.Global picture_mode", t);
+        }
+
+        // 2. Call local framework reflection if possible
         Object pm = getPictureManager(context);
         if (pm != null) {
             try {
@@ -150,17 +162,45 @@ public final class BridgeModesManager {
                 if (m != null) {
                     m.invoke(pm, modeId);
                     ok = true;
-                    Log.i(TAG, "Picture mode set to " + modeId + " via " + m.getName());
+                    Log.i(TAG, "Picture mode set to " + modeId + " via reflection " + m.getName());
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "setPictureMode reflection failed", t);
             }
         }
 
-        try {
-            Settings.Global.putInt(context.getContentResolver(), "picture_mode", modeId);
+        // 3. Dispatch system-level hardware change via loopback ADB and MiPictureActivity
+        int targetIndex;
+        switch (modeId) {
+            case 0: targetIndex = 0; break;  // Standard
+            case 5: targetIndex = 1; break;  // Vivid
+            case 3: targetIndex = 2; break;  // Movie
+            case 6: targetIndex = 3; break;  // Sport
+            case 21: targetIndex = 4; break; // Filmmaker
+            default: targetIndex = -1; break;
+        }
+
+        if (targetIndex >= 0) {
+            final int idx = targetIndex;
+            sAdbExecutor.execute(() -> {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("am start --activity-no-animation -n com.android.tv.settings/com.xiaomi.gtv.settings.display.picture.MiPictureActivity --es hot_key picture_mode");
+                    sb.append(" && sleep 0.22 && input keyevent KEYCODE_DPAD_CENTER && sleep 0.08");
+                    for (int i = 0; i < idx; i++) {
+                        sb.append(" && input keyevent KEYCODE_DPAD_DOWN && sleep 0.05");
+                    }
+                    sb.append(" && input keyevent KEYCODE_DPAD_CENTER && sleep 0.12 && input keyevent KEYCODE_BACK && sleep 0.04 && input keyevent KEYCODE_BACK");
+                    String cmd = sb.toString();
+                    Log.i(TAG, "Dispatching hardware picture mode switch to index " + idx + ": " + cmd);
+                    BridgeAdbManager.getInstance(context).executeShell(cmd);
+                } catch (Throwable t) {
+                    Log.e(TAG, "Failed executing picture mode ADB sequence", t);
+                }
+            });
             ok = true;
-        } catch (Throwable ignored) {}
+        }
+
         return ok;
     }
 
@@ -192,6 +232,7 @@ public final class BridgeModesManager {
 
     public static boolean setSoundMode(Context context, int modeId) {
         boolean ok = false;
+        // 1. Call local reflection to update internal state
         Object sm = getSoundManager(context);
         if (sm != null) {
             try {
@@ -206,12 +247,51 @@ public final class BridgeModesManager {
                 if (m != null) {
                     m.invoke(sm, modeId);
                     ok = true;
-                    Log.i(TAG, "Sound mode set to " + modeId + " via " + m.getName());
+                    Log.i(TAG, "Sound mode set to " + modeId + " via reflection " + m.getName());
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "setSoundMode reflection failed", t);
             }
         }
+
+        // 2. Dispatch system-level hardware change via loopback ADB and MiSoundActivity
+        // Mapping in MiSoundActivity sound mode list:
+        // 0: Standard (mode 0)
+        // 1: Movie (mode 1)
+        // 2: News (mode 2)
+        // 3: Game (mode 3)
+        // 4: Custom (mode 4)
+        int targetIndex;
+        switch (modeId) {
+            case 0: targetIndex = 0; break; // Standard
+            case 1: targetIndex = 1; break; // Movie
+            case 2: targetIndex = 2; break; // News
+            case 3: targetIndex = 3; break; // Game
+            case 4: targetIndex = 4; break; // Custom
+            default: targetIndex = -1; break;
+        }
+
+        if (targetIndex >= 0) {
+            final int idx = targetIndex;
+            sAdbExecutor.execute(() -> {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("am start --activity-no-animation -n com.android.tv.settings/com.xiaomi.gtv.settings.display.sound.MiSoundActivity");
+                    sb.append(" && sleep 0.22 && input keyevent KEYCODE_DPAD_DOWN && sleep 0.08 && input keyevent KEYCODE_DPAD_CENTER && sleep 0.08");
+                    for (int i = 0; i < idx; i++) {
+                        sb.append(" && input keyevent KEYCODE_DPAD_DOWN && sleep 0.05");
+                    }
+                    sb.append(" && input keyevent KEYCODE_DPAD_CENTER && sleep 0.12 && input keyevent KEYCODE_BACK && sleep 0.04 && input keyevent KEYCODE_BACK");
+                    String cmd = sb.toString();
+                    Log.i(TAG, "Dispatching hardware sound mode switch to index " + idx + ": " + cmd);
+                    BridgeAdbManager.getInstance(context).executeShell(cmd);
+                } catch (Throwable t) {
+                    Log.e(TAG, "Failed executing sound mode ADB sequence", t);
+                }
+            });
+            ok = true;
+        }
+
         return ok;
     }
 

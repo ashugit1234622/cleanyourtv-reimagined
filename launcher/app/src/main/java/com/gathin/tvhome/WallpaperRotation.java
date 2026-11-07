@@ -77,6 +77,19 @@ final class WallpaperRotation {
         return images.get(0);
     }
 
+    /**
+     * The previous picture in the sorted collection, wrapping to the last at the start.
+     */
+    static File previous(List<File> images, String current) {
+        if (images.isEmpty()) return null;
+        for (int i = 0; i < images.size(); i++) {
+            if (images.get(i).getName().equals(current)) {
+                return images.get((i - 1 + images.size()) % images.size());
+            }
+        }
+        return images.get(images.size() - 1);
+    }
+
     /** Picks the next picture for {@code order}; an unknown order keeps the historical shuffle. */
     static File pick(List<File> images, String previous, String order, Random random) {
         return ORDER_SEQUENTIAL.equals(order) ? next(images, previous) : pick(images, previous, random);

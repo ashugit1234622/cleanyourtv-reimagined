@@ -124,8 +124,9 @@ public class BridgeAdbManager {
     }
 
     private void checkAutoStop() {
-        if (connectStartTime > 0 && (SystemClock.elapsedRealtime() - connectStartTime > AUTO_STOP_MS)) {
-            Log.i(TAG, "Spike 15-minute auto-stop triggered; disconnecting loopback ADB");
+        long refTime = lastActivityTime > 0 ? lastActivityTime : connectStartTime;
+        if (refTime > 0 && (SystemClock.elapsedRealtime() - refTime > AUTO_STOP_MS)) {
+            Log.i(TAG, "Loopback ADB inactive for 15 minutes; auto-stopping");
             disconnect();
         }
     }
@@ -237,6 +238,9 @@ public class BridgeAdbManager {
         }
 
         checkAutoStop();
+        if (!isConnected()) {
+            connectSync(1500);
+        }
 
         synchronized (connectionLock) {
             if (!isConnected()) {
@@ -264,6 +268,57 @@ public class BridgeAdbManager {
                 lastError = ex.getMessage();
                 closeQuietly();
                 throw ex;
+            }
+        }
+    }
+
+    /**
+     * Executes an internal system shell command via loopback ADB.
+     * Synchronously waits for completion up to 4.5 seconds.
+     * @param cmd Shell command to execute
+     * @return true if command executed successfully, false otherwise
+     */
+    public boolean executeShell(String cmd) {
+        checkAutoStop();
+        if (!isConnected()) {
+            Log.i(TAG, "executeShell: connecting to loopback ADB...");
+            if (!connectSync(2500)) {
+                Log.w(TAG, "executeShell: failed to connect to loopback ADB (status: " + status + ")");
+                return false;
+            }
+        }
+
+        synchronized (connectionLock) {
+            if (!isConnected()) {
+                Log.w(TAG, "executeShell: ADB not connected after connectSync");
+                return false;
+            }
+            try {
+                String command = "shell:" + cmd;
+                AdbStream stream = connection.open(command);
+                long start = SystemClock.elapsedRealtime();
+                try {
+                    while (!stream.isClosed() && (SystemClock.elapsedRealtime() - start < 4500)) {
+                        try {
+                            byte[] data = stream.read();
+                            if (data == null || data.length == 0) break;
+                        } catch (IOException e) {
+                            break;
+                        }
+                    }
+                } catch (Exception ignored) {}
+                try {
+                    stream.close();
+                } catch (Exception ignored) {}
+                lastActivityTime = SystemClock.elapsedRealtime();
+                Log.i(TAG, "executeShell completed: " + cmd);
+                return true;
+            } catch (Exception ex) {
+                Log.e(TAG, "executeShell failed for cmd: " + cmd, ex);
+                status = Status.ERROR;
+                lastError = ex.getMessage();
+                closeQuietly();
+                return false;
             }
         }
     }

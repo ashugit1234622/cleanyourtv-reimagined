@@ -29,6 +29,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import com.gathin.tvhome.bridge.BridgeAdbManager;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
@@ -141,6 +142,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String sourcePanelAction;
     private String sourcePanelExtra;
     private boolean coocaaSources;
+
+    private static volatile MainActivity activeInstance;
 
     private AppAdapter adapter;
     private RecyclerView grid;
@@ -574,6 +577,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
         // the theme's background, so launch looks the same.
         getWindow().setBackgroundDrawable(null);
+        activeInstance = this;
         wallpaperPlayer = new WallpaperPlayer(this, root, cfg);
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
@@ -1507,10 +1511,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (showStats) startStats();
         if (gameDay != null) gameDay.start();
         sky.update();
+        activeInstance = this;
         if (wallpaperPlayer != null && wallpaperPlayer.isEmpty()) {
             wallpaperPlayer.reload(Config.load(this));
         }
         wallpaperPlayer.start();
+        if (com.gathin.tvhome.bridge.BridgeConfig.isEnabled(this)) {
+            com.gathin.tvhome.bridge.BridgeService.start(this);
+        }
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && lamp != null) {
             lamp.start();
@@ -1767,6 +1775,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         unregisterReceiver(packageReceiver);
         unregisterReceiver(bootIntroWakeReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
+        if (activeInstance == this) activeInstance = null;
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -1809,6 +1818,92 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return true;
         }
         return false;
+    }
+
+    private boolean handleChannelKeys(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == 166) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (wallpaperPlayer != null) {
+                    wallpaperPlayer.showNext();
+                }
+            }
+            return true;
+        } else if (keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN || keyCode == 167) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (wallpaperPlayer != null) {
+                    wallpaperPlayer.showPrevious();
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean cycleWallpaper(boolean forward) {
+        MainActivity act = activeInstance;
+        if (act != null && act.wallpaperPlayer != null) {
+            act.runOnUiThread(() -> {
+                if (forward) {
+                    act.wallpaperPlayer.showNext();
+                } else {
+                    act.wallpaperPlayer.showPrevious();
+                }
+            });
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleScreensaverKey(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        if (keyCode == 194 || keyCode == KeyEvent.KEYCODE_BUTTON_14) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("MainActivity", "Key 194 pressed: triggering Aerial Views screensaver");
+                startScreensaver(this);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public static void startScreensaver(Context context) {
+        if (context == null) return;
+        new Thread(() -> {
+            boolean started = false;
+            // 1. Try real system dream via loopback ADB (shell UID 2000 has WRITE_DREAM_STATE)
+            try {
+                BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+                started = adb.executeShell("service call dreams 1");
+                if (started) {
+                    android.util.Log.d("MainActivity", "Started system dream via ADB service call dreams 1");
+                    return;
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("MainActivity", "ADB service call dreams 1 failed: " + t.getMessage());
+            }
+
+            // 2. Direct Runtime exec fallback
+            try {
+                Process p = Runtime.getRuntime().exec(new String[]{"service", "call", "dreams", "1"});
+                p.waitFor();
+                if (p.exitValue() == 0) {
+                    android.util.Log.d("MainActivity", "Started screensaver via runtime exec");
+                    return;
+                }
+            } catch (Throwable ignored) {}
+
+            // 3. Native Intent fallback directly to Aerial Views screensaver
+            try {
+                Intent intent = new Intent();
+                intent.setComponent(new ComponentName("com.neilturner.aerialviews", "com.neilturner.aerialviews.ui.screensaver.TestActivity"));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                context.startActivity(intent);
+                android.util.Log.d("MainActivity", "Started screensaver via Aerial Views TestActivity");
+            } catch (Throwable t) {
+                android.util.Log.e("MainActivity", "Failed to launch Aerial Views TestActivity", t);
+            }
+        }).start();
     }
 
     // ---- reorder ---------------------------------------------------------------------------------
@@ -1862,6 +1957,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (resumed && event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()),
                 homeHoldAppKeys.get(event.getKeyCode()))) return true;
         if (handleSettingsKey(event)) return true;
+        if (handleChannelKeys(event)) return true;
+        if (handleScreensaverKey(event)) return true;
         if (holdOk(event)) return true;
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {

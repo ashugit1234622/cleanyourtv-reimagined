@@ -41,7 +41,7 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .wheel .m svg{width:38px;height:38px}
 .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
 .btn{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;padding:15px 18px;border-radius:99px;font-weight:650;cursor:pointer;border:1px solid var(--ln);background:var(--sf);text-align:center}
-.btn:active{opacity:.75}.btn:focus-visible{outline:2px solid var(--ac)}
+.btn:active{opacity:.75}.btn:focus-visible{outline:2px solid var(--ac)}.btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.p{background:var(--ac);color:var(--on);border-color:var(--ac)}
 .btn svg{width:22px;height:22px}
 .box{padding:16px;border-radius:18px;background:var(--sf);border:1px solid var(--ln)}
@@ -137,6 +137,7 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
     <button class="btn k" data-k="volume_down" data-r="1"><svg class="i"><use href="#i-vdn"/></svg>Volume down</button>
     <button class="btn k" data-k="volume_up" data-r="1"><svg class="i"><use href="#i-vup"/></svg>Volume up</button>
   </div>
+  <button class="btn" id="btn-screensaver" style="width:100%;margin-top:14px" title="Start Aerial Views Screensaver"><svg class="i" style="width:20px;height:20px;margin-right:6px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Start Screensaver</button>
 </section>
 
 <section class="view" id="v-cast" hidden>
@@ -152,9 +153,14 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
       <b style="font-size:15px">4K TV Wallpaper</b>
       <span class="mu sm" id="wp-stat">Checking…</span>
     </div>
-    <p class="mu sm" style="margin-bottom:14px">Select a 4K image (.jpg or .png, min 3840×2160) from your phone to add to your TV's launcher rotation.</p>
-    <input type="file" id="wp-file" accept="image/jpeg,image/png" hidden>
-    <button class="btn p" id="wp-pick" style="width:100%"><svg class="i" style="margin-right:6px"><path d="M12 4v16m-8-8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Upload 4K Wallpaper</button>
+    <p class="mu sm" style="margin-bottom:14px">Select 4K images (.jpg or .png, min 3840×2160) from your phone to add to your TV's launcher rotation.</p>
+    <input type="file" id="wp-file" accept="image/jpeg,image/png" multiple hidden>
+    <div class="duo" style="margin-top:0;margin-bottom:10px">
+      <button class="btn" id="wp-prev" title="Previous TV Wallpaper"><svg class="i" style="width:20px;height:20px"><use href="#i-prev"/></svg>Previous</button>
+      <button class="btn" id="wp-next" title="Next TV Wallpaper">Next<svg class="i" style="width:20px;height:20px"><use href="#i-next"/></svg></button>
+    </div>
+    <button class="btn p" id="wp-pick" style="width:100%"><svg class="i" style="margin-right:6px"><path d="M12 4v16m-8-8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Upload 4K Wallpapers</button>
+    <button class="btn" id="wp-screensaver" style="width:100%;margin-top:10px" title="Start Aerial Views Screensaver"><svg class="i" style="width:20px;height:20px;margin-right:6px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>Start Aerial Screensaver</button>
   </div>
 </section>
 
@@ -237,6 +243,8 @@ async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?
  if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
  if(p==='/wallpapers')return{count:3,wallpapers:[]};
  if(p==='/wallpaper')return{status:'ok',filename:'demo_4k.jpg'};
+ if(p==='/wallpaper/next'||p==='/wallpaper/prev'||p==='/wallpaper/cycle')return{status:'ok'};
+ if(p==='/screensaver')return{status:'ok'};
  if(p==='/modes'){
   if(o.method==='POST'){
    if(b.type==='picture'){demoModes.picture.currentId=b.mode;const f=demoModes.picture.options.find(x=>x.id===b.mode);if(f)demoModes.picture.currentName=f.name}
@@ -320,34 +328,114 @@ $('#paste').onclick=async()=>{try{$('#url').value=(await navigator.clipboard.rea
 $('#send').onclick=()=>cast();
 $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
 
-/* 4K Wallpaper upload */
+/* 4K Wallpaper upload & switcher */
 async function loadWpCount(){try{const r=await api('/wallpapers');$('#wp-stat').textContent=(r.count||0)+' active on TV'}catch(e){}}
-const wpIn=$('#wp-file'),wpBtn=$('#wp-pick');
+const wpIn=$('#wp-file'),wpBtn=$('#wp-pick'),wpPrev=$('#wp-prev'),wpNext=$('#wp-next');
+if(wpPrev){
+  wpPrev.onclick=async()=>{
+    try{
+      await api('/wallpaper/prev',{method:'POST'});
+      toast('Switched to previous wallpaper');
+    }catch(e){toast(e.message||'Failed to switch wallpaper',1)}
+  };
+}
+if(wpNext){
+  wpNext.onclick=async()=>{
+    try{
+      await api('/wallpaper/next',{method:'POST'});
+      toast('Switched to next wallpaper');
+    }catch(e){toast(e.message||'Failed to switch wallpaper',1)}
+  };
+}
+async function triggerScreensaver(){
+  buzz();
+  toast('Starting Aerial Views screensaver…');
+  try{
+    await api('/screensaver',{method:'POST'});
+    toast('Screensaver active on TV');
+  }catch(e){toast(e.message||'Failed to start screensaver',1)}
+}
+const btnSs=$('#btn-screensaver');if(btnSs)btnSs.onclick=triggerScreensaver;
+const wpSs=$('#wp-screensaver');if(wpSs)wpSs.onclick=triggerScreensaver;
+function inspectImg(file){
+ return new Promise((resolve,reject)=>{
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(url);resolve({w:img.naturalWidth,h:img.naturalHeight})};
+  img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Decode error'))};
+  img.src=url;
+ });
+}
+function readB64(file){
+ return new Promise((resolve,reject)=>{
+  const r=new FileReader();
+  r.onload=()=>resolve((r.result||'').split(',')[1]||'');
+  r.onerror=()=>reject(new Error('Read error'));
+  r.readAsDataURL(file);
+ });
+}
 if(wpBtn&&wpIn){
  wpBtn.onclick=()=>wpIn.click();
  wpIn.onchange=async()=>{
-  const file=wpIn.files[0];if(!file)return;wpIn.value='';
-  const ext=file.name.split('.').pop().toLowerCase();
-  if(ext!=='jpg'&&ext!=='jpeg'&&ext!=='png')return toast('Only JPG and PNG images allowed',1);
-  if(file.size>10*1024*1024)return toast('Image exceeds 10 MB limit',1);
-  toast('Checking 4K resolution…');
-  const url=URL.createObjectURL(file),img=new Image();
-  img.onload=async()=>{
-   URL.revokeObjectURL(url);
-   if(img.naturalWidth<3840||img.naturalHeight<2160)return toast(`Not 4K: ${img.naturalWidth}×${img.naturalHeight} (min 3840×2160 required)`,1);
-   toast('Uploading 4K wallpaper to TV…');
-   const reader=new FileReader();
-   reader.onload=async()=>{
-    try{
-     const b64=reader.result.split(',')[1];
-     const res=await api('/wallpaper',{method:'POST',body:JSON.stringify({name:file.name,data:b64})});
-     toast('4K Wallpaper added to TV!');loadWpCount();
-    }catch(e){toast(e.message||'Upload failed',1)}
-   };
-   reader.readAsDataURL(file);
-  };
-  img.onerror=()=>{URL.revokeObjectURL(url);toast('Could not inspect image',1)};
-  img.src=url;
+  const files=[...wpIn.files];if(!files.length)return;wpIn.value='';
+  const total=files.length;
+  wpBtn.disabled=true;
+  const origHtml=wpBtn.innerHTML;
+  let success=0,dups=0,fails=0;
+  for(let i=0;i<total;i++){
+   const file=files[i];
+   const tag=total>1?`[${i+1}/${total}] `:'';
+   wpBtn.textContent=`Uploading ${i+1}/${total}…`;
+   const ext=file.name.split('.').pop().toLowerCase();
+   if(ext!=='jpg'&&ext!=='jpeg'&&ext!=='png'){
+    toast(`${tag}${file.name}: Only JPG/PNG allowed`,1);
+    fails++;
+    continue;
+   }
+   if(file.size>10*1024*1024){
+    toast(`${tag}${file.name}: Exceeds 10 MB limit`,1);
+    fails++;
+    continue;
+   }
+   toast(`${tag}Checking ${file.name}…`);
+   let dims;
+   try{
+    dims=await inspectImg(file);
+   }catch(e){
+    toast(`${tag}${file.name}: Could not inspect image`,1);
+    fails++;
+    continue;
+   }
+   if(dims.w<3840||dims.h<2160){
+    toast(`${tag}${file.name}: Not 4K (${dims.w}×${dims.h})`,1);
+    fails++;
+    continue;
+   }
+   toast(`${tag}Uploading ${file.name} to TV…`);
+   try{
+    const b64=await readB64(file);
+    await api('/wallpaper',{method:'POST',body:JSON.stringify({name:file.name,data:b64})});
+    success++;
+   }catch(e){
+    if(e.status===409||(e.message&&e.message.includes('already exists'))){
+     dups++;
+     toast(`${tag}${file.name}: Already on TV`,1);
+    }else{
+     fails++;
+     toast(`${tag}${file.name}: ${e.message||'Upload failed'}`,1);
+    }
+   }
+  }
+  wpBtn.disabled=false;
+  wpBtn.innerHTML=origHtml;
+  loadWpCount();
+  if(total===1){
+   if(success===1)toast('4K Wallpaper added to TV!');
+  }else{
+   let msg=`Uploaded ${success}/${total} wallpapers!`;
+   if(dups)msg+=` (${dups} already on TV)`;
+   if(fails)msg+=` (${fails} failed)`;
+   toast(msg,success===0);
+  }
  };
 }
 

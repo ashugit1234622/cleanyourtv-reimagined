@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 
 /** Displays and rotates a theme's local wallpaper images while Home is visible. */
 final class WallpaperPlayer {
+    private final Context context;
     private final FrameLayout root;
     private final ImageView image;
     private final int backgroundColor;
@@ -52,6 +53,8 @@ final class WallpaperPlayer {
     private boolean closed;
     private boolean loading;
     private String displayed = "";
+    private String pendingTargetName = null;
+    private long changeRequestId = 0;
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
     private final TextView caption;
     private final Map<String, String> names;
@@ -63,6 +66,7 @@ final class WallpaperPlayer {
     private int[] sun;
 
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
+        this.context = context;
         this.root = root;
         backgroundColor = config.backgroundColor;
         files = new ArrayList<>(config.wallpapers);
@@ -154,6 +158,80 @@ final class WallpaperPlayer {
             }
             showFirst();
         }
+    }
+
+    void showNext() {
+        cycleWallpaper(true);
+    }
+
+    void showPrevious() {
+        cycleWallpaper(false);
+    }
+
+    private List<File> allWallpapers() {
+        File dir = Config.dir(context);
+        List<File> list = new ArrayList<>(WallpaperRotation.images(dir == null ? null : new File(dir, "wallpapers")));
+        if (list.isEmpty()) {
+            list = new ArrayList<>(WallpaperRotation.images(new File(context.getFilesDir(), "wallpapers")));
+        }
+        File single = dir == null ? null : new File(dir, Config.WALLPAPER_NAME);
+        if (single != null && single.isFile() && !list.contains(single)) {
+            list.add(0, single);
+        }
+        if (list.isEmpty() && !files.isEmpty()) {
+            list.addAll(files);
+        }
+        return list;
+    }
+
+    private void cycleWallpaper(boolean forward) {
+        if (closed) return;
+        List<File> list = allWallpapers();
+        if (list.isEmpty()) return;
+
+        // Keep files in sync with disk collection
+        files.clear();
+        files.addAll(list);
+
+        String currentName = pendingTargetName != null ? pendingTargetName
+                : (!displayed.isEmpty() ? displayed : preferences.getString("image", ""));
+        File target = forward ? WallpaperRotation.next(list, currentName)
+                              : WallpaperRotation.previous(list, currentName);
+        if (target == null) return;
+
+        pendingTargetName = target.getName();
+        final String targetName = target.getName();
+        final long reqId = ++changeRequestId;
+
+        decoder.execute(() -> {
+            Bitmap bitmap = decode(target);
+            root.post(() -> {
+                if (closed) {
+                    if (bitmap != null) bitmap.recycle();
+                    return;
+                }
+                if (reqId != changeRequestId) {
+                    if (bitmap != null) bitmap.recycle();
+                    return;
+                }
+                pendingTargetName = null;
+                if (bitmap == null) {
+                    Log.w("TvHome.Wallpaper", "Failed to decode wallpaper: " + targetName);
+                    return;
+                }
+                if (image.getParent() == null) {
+                    root.addView(image, 0, new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                }
+                show(bitmap);
+                displayed = targetName;
+                showCaption(true);
+                preferences.edit().putString("image", displayed)
+                        .putLong("changed", System.currentTimeMillis()).apply();
+                context.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE)
+                        .edit().putString(Config.WALLPAPER_CHOICE_KEY, displayed).apply();
+            });
+        });
     }
 
     void stop() {

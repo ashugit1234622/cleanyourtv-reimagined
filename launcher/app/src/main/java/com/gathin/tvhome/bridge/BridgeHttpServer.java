@@ -23,6 +23,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.gathin.tvhome.MainActivity;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -118,6 +120,14 @@ public class BridgeHttpServer extends NanoHTTPD {
                 return handleKey(session);
             } else if (Method.POST.equals(method) && "/wallpaper".equals(uri)) {
                 return handleUploadWallpaper(session);
+            } else if (Method.POST.equals(method) && "/wallpaper/next".equals(uri)) {
+                return handleCycleWallpaper(true);
+            } else if (Method.POST.equals(method) && "/wallpaper/prev".equals(uri)) {
+                return handleCycleWallpaper(false);
+            } else if (Method.POST.equals(method) && "/wallpaper/cycle".equals(uri)) {
+                return handleCycleWallpaperPost(session);
+            } else if (Method.POST.equals(method) && "/screensaver".equals(uri)) {
+                return handleScreensaver();
             } else if (Method.GET.equals(method) && "/wallpapers".equals(uri)) {
                 return handleGetWallpapers();
             } else if (Method.GET.equals(method) && "/modes".equals(uri)) {
@@ -553,6 +563,12 @@ public class BridgeHttpServer extends NanoHTTPD {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(homeIntent);
                 break;
+            case "wp_next":
+            case "channel_up":
+                return handleCycleWallpaper(true);
+            case "wp_prev":
+            case "channel_down":
+                return handleCycleWallpaper(false);
             default:
                 return errorResponse(Response.Status.BAD_REQUEST, "Unknown key action: " + action);
         }
@@ -728,6 +744,44 @@ public class BridgeHttpServer extends NanoHTTPD {
             res.put("wallpapers", arr);
         } catch (JSONException ignored) {}
         return jsonResponse(Response.Status.OK, res.toString());
+    }
+
+    private Response handleCycleWallpaper(boolean forward) {
+        boolean cycled = MainActivity.cycleWallpaper(forward);
+        if (!cycled) {
+            BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+            if (adb.isConnected()) {
+                adb.executeShell("input keyevent " + (forward ? "166" : "167"));
+            }
+        }
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", "ok");
+            resp.put("direction", forward ? "next" : "prev");
+        } catch (JSONException ignored) {}
+        return jsonResponse(Response.Status.OK, resp.toString());
+    }
+
+    private Response handleCycleWallpaperPost(IHTTPSession session) {
+        String body = readBody(session);
+        boolean forward = true;
+        if (body != null) {
+            try {
+                JSONObject obj = new JSONObject(body);
+                String dir = obj.optString("direction", "next");
+                forward = !"prev".equalsIgnoreCase(dir) && !"previous".equalsIgnoreCase(dir);
+            } catch (JSONException ignored) {}
+        }
+        return handleCycleWallpaper(forward);
+    }
+
+    private Response handleScreensaver() {
+        MainActivity.startScreensaver(context);
+        JSONObject obj = new JSONObject();
+        try {
+            obj.put("status", "ok");
+        } catch (JSONException ignored) {}
+        return newFixedLengthResponse(Response.Status.OK, "application/json", obj.toString());
     }
 
     private Response handleGetModes() {
