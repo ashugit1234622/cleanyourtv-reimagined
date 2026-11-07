@@ -168,6 +168,29 @@ final class WallpaperPlayer {
         cycleWallpaper(false);
     }
 
+    String getDisplayedName() {
+        return displayed != null ? displayed : "";
+    }
+
+    void onWallpaperDeleted(String name) {
+        if (closed) return;
+        List<File> list = allWallpapers();
+        files.clear();
+        files.addAll(list);
+        if (displayed != null && displayed.equals(name)) {
+            if (!list.isEmpty()) {
+                showNext();
+            } else {
+                displayed = "";
+                if (current != null) {
+                    current.recycle();
+                    current = null;
+                }
+                image.setImageBitmap(null);
+            }
+        }
+    }
+
     private List<File> allWallpapers() {
         File dir = Config.dir(context);
         List<File> list = new ArrayList<>(WallpaperRotation.images(dir == null ? null : new File(dir, "wallpapers")));

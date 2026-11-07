@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -26,14 +27,17 @@ import org.json.JSONObject;
 import com.gathin.tvhome.MainActivity;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -98,6 +102,9 @@ public class BridgeHttpServer extends NanoHTTPD {
         if (authHeader != null && authHeader.trim().toLowerCase(Locale.ROOT).startsWith("bearer ")) {
             token = authHeader.trim().substring(7).trim();
         }
+        if (token == null && session.getParms() != null) {
+            token = session.getParms().get("token");
+        }
 
         if (token == null || !BridgeConfig.isTokenValid(context, token)) {
             Log.w(TAG, "Unauthorized request to " + uri + " - Header: " + authHeader);
@@ -130,6 +137,13 @@ public class BridgeHttpServer extends NanoHTTPD {
                 return handleScreensaver();
             } else if (Method.GET.equals(method) && "/wallpapers".equals(uri)) {
                 return handleGetWallpapers();
+            } else if ((Method.DELETE.equals(method) && "/wallpaper".equals(uri)) ||
+                       (Method.POST.equals(method) && "/wallpaper/delete".equals(uri))) {
+                return handleDeleteWallpaper(session);
+            } else if (Method.GET.equals(method) && "/wallpaper/thumb".equals(uri)) {
+                return handleGetWallpaperFile(session, true);
+            } else if (Method.GET.equals(method) && "/wallpaper/file".equals(uri)) {
+                return handleGetWallpaperFile(session, false);
             } else if (Method.GET.equals(method) && "/modes".equals(uri)) {
                 return handleGetModes();
             } else if (Method.POST.equals(method) && "/modes".equals(uri)) {
@@ -725,6 +739,7 @@ public class BridgeHttpServer extends NanoHTTPD {
         JSONArray arr = new JSONArray();
         int count = 0;
         if (files != null) {
+            Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
             for (File f : files) {
                 String n = f.getName().toLowerCase(Locale.ROOT);
                 if (f.isFile() && f.length() > 0 && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png"))) {
@@ -733,6 +748,7 @@ public class BridgeHttpServer extends NanoHTTPD {
                     try {
                         item.put("name", f.getName());
                         item.put("size", f.length());
+                        item.put("modified", f.lastModified());
                     } catch (JSONException ignored) {}
                     arr.put(item);
                 }
@@ -741,9 +757,145 @@ public class BridgeHttpServer extends NanoHTTPD {
         JSONObject res = new JSONObject();
         try {
             res.put("count", count);
+            res.put("current", MainActivity.getCurrentWallpaperName());
             res.put("wallpapers", arr);
         } catch (JSONException ignored) {}
         return jsonResponse(Response.Status.OK, res.toString());
+    }
+
+    private Response handleDeleteWallpaper(IHTTPSession session) {
+        String name = null;
+        Map<String, String> parms = session.getParms();
+        if (parms != null && parms.containsKey("name")) {
+            name = parms.get("name");
+        }
+        if (name == null || name.trim().isEmpty()) {
+            String body = readBody(session);
+            if (body != null && !body.trim().isEmpty()) {
+                try {
+                    JSONObject obj = new JSONObject(body);
+                    name = obj.optString("name", null);
+                } catch (JSONException ignored) {}
+            }
+        }
+        if (name == null || name.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing wallpaper 'name'");
+        }
+
+        name = name.trim();
+        if (name.contains("..") || name.contains("/") || name.contains("\\") || name.contains("\0")) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid wallpaper name");
+        }
+
+        File extDir = new File(context.getExternalFilesDir(null), "wallpapers");
+        File intDir = new File(context.getFilesDir(), "wallpapers");
+        File target = new File(extDir, name);
+        if (!target.exists()) {
+            target = new File(intDir, name);
+        }
+
+        try {
+            String targetPath = target.getCanonicalPath();
+            String extPath = extDir.getCanonicalPath();
+            String intPath = intDir.getCanonicalPath();
+            if (!targetPath.startsWith(extPath) && !targetPath.startsWith(intPath)) {
+                return errorResponse(Response.Status.FORBIDDEN, "Access denied");
+            }
+        } catch (IOException e) {
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Path verification failed");
+        }
+
+        if (!target.exists() || !target.isFile()) {
+            return errorResponse(Response.Status.NOT_FOUND, "Wallpaper not found: " + name);
+        }
+
+        boolean deleted = target.delete();
+        if (!deleted) {
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Failed to delete wallpaper file from disk");
+        }
+
+        Log.i(TAG, "Deleted wallpaper: " + name);
+        MainActivity.onWallpaperDeleted(name);
+
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", "ok");
+            resp.put("deleted", name);
+        } catch (JSONException ignored) {}
+        return jsonResponse(Response.Status.OK, resp.toString());
+    }
+
+    private Response handleGetWallpaperFile(IHTTPSession session, boolean isThumb) {
+        Map<String, String> parms = session.getParms();
+        String name = parms != null ? parms.get("name") : null;
+        if (name == null || name.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing wallpaper 'name'");
+        }
+        name = name.trim();
+        if (name.contains("..") || name.contains("/") || name.contains("\\") || name.contains("\0")) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid wallpaper name");
+        }
+
+        File extDir = new File(context.getExternalFilesDir(null), "wallpapers");
+        File intDir = new File(context.getFilesDir(), "wallpapers");
+        File target = new File(extDir, name);
+        if (!target.exists()) {
+            target = new File(intDir, name);
+        }
+
+        try {
+            String targetPath = target.getCanonicalPath();
+            String extPath = extDir.getCanonicalPath();
+            String intPath = intDir.getCanonicalPath();
+            if (!targetPath.startsWith(extPath) && !targetPath.startsWith(intPath)) {
+                return errorResponse(Response.Status.FORBIDDEN, "Access denied");
+            }
+        } catch (IOException e) {
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Path verification failed");
+        }
+
+        if (!target.exists() || !target.isFile()) {
+            return errorResponse(Response.Status.NOT_FOUND, "Wallpaper not found: " + name);
+        }
+
+        String lower = name.toLowerCase(Locale.ROOT);
+        String mime = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+
+        if (isThumb) {
+            try {
+                BitmapFactory.Options opts = new BitmapFactory.Options();
+                opts.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(target.getAbsolutePath(), opts);
+                int sample = 1;
+                while ((opts.outWidth / sample) > 320 || (opts.outHeight / sample) > 180) {
+                    sample *= 2;
+                }
+                opts.inJustDecodeBounds = false;
+                opts.inSampleSize = Math.max(1, sample);
+                opts.inPreferredConfig = Bitmap.Config.RGB_565;
+                Bitmap bmp = BitmapFactory.decodeFile(target.getAbsolutePath(), opts);
+                if (bmp != null) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+                    bmp.recycle();
+                    byte[] thumbBytes = baos.toByteArray();
+                    Response r = newFixedLengthResponse(Response.Status.OK, "image/jpeg", new ByteArrayInputStream(thumbBytes), thumbBytes.length);
+                    r.addHeader("Cache-Control", "private, max-age=86400");
+                    return r;
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Thumbnail decode failed: " + t.getMessage());
+            }
+        }
+
+        try {
+            FileInputStream fis = new FileInputStream(target);
+            Response r = newFixedLengthResponse(Response.Status.OK, mime, fis, target.length());
+            r.addHeader("Cache-Control", "private, max-age=86400");
+            return r;
+        } catch (FileNotFoundException e) {
+            return errorResponse(Response.Status.NOT_FOUND, "File not found");
+        }
     }
 
     private Response handleCycleWallpaper(boolean forward) {

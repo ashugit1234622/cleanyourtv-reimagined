@@ -84,6 +84,16 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .chip{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;padding:7px 13px;border-radius:99px;background:var(--sf);border:1px solid var(--ln);font-size:12.5px;font-weight:650;color:var(--mu);cursor:pointer;transition:all .12s;white-space:nowrap}
 .chip:active{transform:scale(.94)}
 .chip.act{background:var(--ac);color:var(--on);border-color:var(--ac)}
+.wp-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:420px;overflow-y:auto;padding-right:2px}
+.wp-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--ln);border-radius:12px;gap:10px}
+.wp-thumb{width:64px;height:36px;border-radius:6px;object-fit:cover;background:rgba(0,0,0,0.3);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)}
+.wp-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.wp-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx)}
+.wp-meta{font-size:11px;color:var(--mu);display:flex;gap:6px;align-items:center}
+.wp-badge{font-size:10px;font-weight:700;color:var(--ac);background:rgba(110,193,255,0.15);padding:1px 5px;border-radius:4px}
+.btn-del{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:rgba(255,69,58,0.12);color:#ff453a;cursor:pointer;flex-shrink:0;transition:all .15s}
+.btn-del:active{transform:scale(0.92);background:rgba(255,69,58,0.25)}
+.btn-del svg{width:17px;height:17px}
 </style>
 </head>
 <body>
@@ -104,6 +114,7 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
 <symbol id="i-lf" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
 <symbol id="i-rt" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
 <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></symbol>
 </defs></svg>
 
 <div class="wrap">
@@ -161,6 +172,13 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
     </div>
     <button class="btn p" id="wp-pick" style="width:100%"><svg class="i" style="margin-right:6px"><path d="M12 4v16m-8-8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Upload 4K Wallpapers</button>
     <button class="btn" id="wp-screensaver" style="width:100%;margin-top:10px" title="Start Aerial Views Screensaver"><svg class="i" style="width:20px;height:20px;margin-right:6px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>Start Aerial Screensaver</button>
+    <div id="wp-list-wrap" style="margin-top:16px;border-top:1px solid var(--ln);padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <b style="font-size:13.5px">TV Wallpapers (<span id="wp-list-count">0</span>)</b>
+        <button class="btn sm" id="wp-refresh" style="padding:4px 10px;font-size:11.5px">Refresh</button>
+      </div>
+      <div id="wp-list" class="wp-list"><p class="mu c sm" style="padding:12px 0">Loading wallpapers…</p></div>
+    </div>
   </div>
 </section>
 
@@ -238,10 +256,12 @@ function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='show'+(ba
 /* Sample data for preview mode */
 const DEMO_APPS=[{name:'TizenTube Cobalt',package:'demo.tt',isDock:true,dockPos:0},{name:'NetMirror',package:'demo.nm',isDock:true,dockPos:1,launchOnly:true},{name:'VLC',package:'demo.vlc'},{name:'Plex',package:'demo.plex'},{name:'Files',package:'demo.files'},{name:'Settings',package:'demo.set'}];
 let demoModes={picture:{currentId:5,currentName:'Vivid',options:[{id:0,name:'Standard'},{id:3,name:'Movie'},{id:5,name:'Vivid'},{id:4,name:'Game'},{id:6,name:'Sport'},{id:21,name:'Filmmaker'},{id:2,name:'Monitor'},{id:1,name:'Custom'}]},sound:{currentId:0,currentName:'Standard',options:[{id:0,name:'Standard'},{id:1,name:'Movie'},{id:5,name:'Music'},{id:3,name:'Game'},{id:2,name:'News'},{id:6,name:'Sport'},{id:4,name:'Custom'}]},dts:{virtualX:true,bass:false,clarity:true,surround:false}};
+let demoWallpapers=[{name:'02_mountain_lake.jpg',size:133018},{name:'03_waterfall.jpg',size:223942},{name:'04_deep_space.jpg',size:283938}];
 async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?JSON.parse(o.body):{};
  if(p==='/apps')return{apps:DEMO_APPS};
  if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
- if(p==='/wallpapers')return{count:3,wallpapers:[]};
+ if(p==='/wallpapers')return{count:demoWallpapers.length,current:demoWallpapers[0]?.name||'',wallpapers:demoWallpapers};
+ if(p==='/wallpaper/delete'){demoWallpapers=demoWallpapers.filter(w=>w.name!==b.name);return{status:'ok',deleted:b.name}};
  if(p==='/wallpaper')return{status:'ok',filename:'demo_4k.jpg'};
  if(p==='/wallpaper/next'||p==='/wallpaper/prev'||p==='/wallpaper/cycle')return{status:'ok'};
  if(p==='/screensaver')return{status:'ok'};
@@ -328,8 +348,59 @@ $('#paste').onclick=async()=>{try{$('#url').value=(await navigator.clipboard.rea
 $('#send').onclick=()=>cast();
 $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
 
-/* 4K Wallpaper upload & switcher */
-async function loadWpCount(){try{const r=await api('/wallpapers');$('#wp-stat').textContent=(r.count||0)+' active on TV'}catch(e){}}
+/* 4K Wallpaper upload, list & switcher */
+async function loadWallpapers(){
+  const stat=$('#wp-stat'), listEl=$('#wp-list'), countEl=$('#wp-list-count');
+  try{
+    const r=await api('/wallpapers');
+    const cnt=r.count||0;
+    if(stat) stat.textContent=cnt+' active on TV';
+    if(countEl) countEl.textContent=cnt;
+    const wps=r.wallpapers||[];
+    if(!listEl) return;
+    if(wps.length===0){
+      listEl.innerHTML='<p class="mu c sm" style="padding:12px 0">No wallpapers found on TV</p>';
+      return;
+    }
+    const cur=r.current||'';
+    listEl.innerHTML=wps.map(w=>{
+      const isCur = cur && (w.name === cur);
+      const sizeStr = (w.size ? (w.size > 1048576 ? (w.size/1048576).toFixed(1)+' MB' : Math.round(w.size/1024)+' KB') : '');
+      const thumbUrl = DEMO ? '' : `/wallpaper/thumb?name=${encodeURIComponent(w.name)}&token=${encodeURIComponent(token)}`;
+      return `
+      <div class="wp-item" data-name="${esc(w.name)}">
+        <img class="wp-thumb" src="${thumbUrl}" alt="" loading="lazy" onerror="this.style.display='none'">
+        <div class="wp-info">
+          <span class="wp-name" title="${esc(w.name)}">${esc(w.name)}</span>
+          <div class="wp-meta">
+            ${sizeStr ? `<span>${sizeStr}</span>` : ''}
+            ${isCur ? `<span class="wp-badge">Active</span>` : ''}
+          </div>
+        </div>
+        <button class="btn-del" title="Delete from TV" onclick="deleteWallpaper('${esc(w.name)}')">
+          <svg class="i"><use href="#i-trash"/></svg>
+        </button>
+      </div>`;
+    }).join('');
+  }catch(e){
+    if(listEl) listEl.innerHTML='<p class="mu c sm" style="padding:12px 0;color:#ff6b6b">Failed to load wallpapers</p>';
+  }
+}
+const loadWpCount = loadWallpapers;
+
+async function deleteWallpaper(name){
+  buzz();
+  if(!confirm(`Delete "${name}" from TV wallpaper rotation?`)) return;
+  toast(`Deleting ${name}…`);
+  try{
+    await api('/wallpaper/delete?name='+encodeURIComponent(name),{method:'POST',body:JSON.stringify({name})});
+    toast(`Deleted: ${name}`);
+    await loadWallpapers();
+  }catch(e){
+    toast(e.message||'Failed to delete wallpaper',1);
+  }
+}
+const wpRef=$('#wp-refresh');if(wpRef)wpRef.onclick=()=>{buzz();loadWallpapers();};
 const wpIn=$('#wp-file'),wpBtn=$('#wp-pick'),wpPrev=$('#wp-prev'),wpNext=$('#wp-next');
 if(wpPrev){
   wpPrev.onclick=async()=>{

@@ -1855,6 +1855,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return false;
     }
 
+    public static String getCurrentWallpaperName() {
+        MainActivity act = activeInstance;
+        if (act != null && act.wallpaperPlayer != null) {
+            return act.wallpaperPlayer.getDisplayedName();
+        }
+        return "";
+    }
+
+    public static void onWallpaperDeleted(String name) {
+        MainActivity act = activeInstance;
+        if (act != null && act.wallpaperPlayer != null) {
+            act.runOnUiThread(() -> act.wallpaperPlayer.onWallpaperDeleted(name));
+        }
+    }
+
     private boolean handleScreensaverKey(KeyEvent event) {
         int keyCode = event.getKeyCode();
         if (keyCode == 194 || keyCode == KeyEvent.KEYCODE_BUTTON_14) {
