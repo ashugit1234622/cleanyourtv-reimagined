@@ -1,0 +1,1682 @@
+{
+ "version": 1,
+ "meta": {
+  "scope": "boot/wake intro only, not the clock greeting",
+  "festivalsPolicy": "Hindu festivals plus national/secular dates only",
+  "datesNeedYearlyUpdate": true
+ },
+ "personal": {
+  "names": {
+   "A": "Ashu",
+   "R": "Ashirwad",
+   "S": "Ashirwad Singh"
+  },
+  "nameShare": 0.5,
+  "tierWeightsOfNamed": {
+   "R": 0.5,
+   "A": 0.35,
+   "S": 0.15
+  },
+  "birthYear": null,
+  "birthdays": {
+   "self": "09-02",
+   "mother": "10-14",
+   "father": "08-14"
+  },
+  "relatives": {
+   "mother": "Mom",
+   "father": "Papa"
+  },
+  "repeat": {
+   "freshShare": 0.9,
+   "historySize": 30,
+   "excludeLastN": 5
+  },
+  "chances": {
+   "tip": 0.12,
+   "rare": 0.04
+  }
+ },
+ "timeBuckets": {
+  "late_night": [
+   "23:30",
+   "04:00"
+  ],
+  "early_morning": [
+   "04:00",
+   "07:00"
+  ],
+  "morning": [
+   "07:00",
+   "12:00"
+  ],
+  "afternoon": [
+   "12:00",
+   "17:00"
+  ],
+  "evening": [
+   "17:00",
+   "19:30"
+  ],
+  "dinner": [
+   "19:30",
+   "21:30"
+  ],
+  "night": [
+   "21:30",
+   "23:30"
+  ]
+ },
+ "gapClassesMinutes": {
+  "short": [
+   0,
+   30
+  ],
+  "medium": [
+   30,
+   240
+  ],
+  "long": [
+   240,
+   720
+  ],
+  "longer": [
+   720,
+   null
+  ]
+ },
+ "templates": {
+  "genericFestival": "Happy {festival}, {name}!"
+ },
+ "festivals": {
+  "new_year": {
+   "fixed": "01-01"
+  },
+  "republic_day": {
+   "fixed": "01-26"
+  },
+  "independence_day": {
+   "fixed": "08-15"
+  },
+  "gandhi_jayanti": {
+   "fixed": "10-02"
+  },
+  "new_years_eve": {
+   "fixed": "12-31"
+  },
+  "lohri": {
+   "fixed": "01-13",
+   "note": "usually 13 Jan; verify each year"
+  },
+  "dhanteras": {
+   "2026": "11-06"
+  },
+  "choti_diwali": {
+   "2026": "11-07",
+   "2027": "10-28",
+   "note": "2027 derived as Diwali minus one day; verify"
+  },
+  "diwali": {
+   "2026": "11-08",
+   "2027": "10-29"
+  },
+  "govardhan_puja": {
+   "2026": "11-09"
+  },
+  "bhai_dooj": {
+   "2026": "11-11"
+  },
+  "chhath": {
+   "2026": "11-15"
+  },
+  "dev_diwali": {
+   "2026": "11-24"
+  },
+  "makar_sankranti": {
+   "2027": "01-14",
+   "note": "some sources say 01-15"
+  },
+  "pongal": {
+   "2027": "01-14",
+   "note": "around Makar Sankranti; some sources say 01-15"
+  },
+  "vasant_panchami": {
+   "2027": "02-11",
+   "note": "single source; verify"
+  },
+  "maha_shivratri": {
+   "2027": "03-06"
+  },
+  "holi": {
+   "2027": "03-22",
+   "note": "Holika Dahan 03-21; one source says 03-23"
+  },
+  "ugadi": {
+   "2027": "04-07",
+   "note": "one source says 04-08"
+  },
+  "tamil_new_year_vishu": {
+   "2027": "04-14",
+   "note": "Vishu is 04-15"
+  },
+  "ram_navami": {
+   "2027": "04-15",
+   "note": "one source says 04-14"
+  },
+  "akshaya_tritiya": {
+   "2027": "05-08",
+   "note": "approximate; verify"
+  },
+  "guru_purnima": {
+   "2027": "07-18",
+   "note": "approximate; verify"
+  },
+  "nag_panchami": {
+   "2027": "08-06"
+  },
+  "raksha_bandhan": {
+   "2027": "08-17"
+  },
+  "janmashtami": {
+   "2027": "08-25",
+   "note": "some sources say 08-24"
+  },
+  "ganesh_chaturthi": {
+   "2027": "09-04"
+  },
+  "onam": {
+   "2027": "09-12"
+  },
+  "navratri_begins": {
+   "2027": "10-01"
+  },
+  "durga_ashtami": {
+   "2027": "10-07"
+  },
+  "dussehra": {
+   "2027": "10-09"
+  },
+  "sharad_purnima": {
+   "2027": "10-14"
+  }
+ },
+ "messages": [
+  {
+   "id": "m001",
+   "text": "Good morning, {name}. Fresh start, fresh day.",
+   "tone": "R",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m002",
+   "text": "Morning, {name}! Coffee first, TV second.",
+   "tone": "A",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m003",
+   "text": "Good morning, {name}. All systems are ready.",
+   "tone": "S",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m004",
+   "text": "Rise and shine, {name}. The day is yours.",
+   "tone": "A",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m005",
+   "text": "Slept well, {name}? The TV did.",
+   "tone": "A",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m006",
+   "text": "Good morning, {name}. Everything is in place.",
+   "tone": "R",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m007",
+   "text": "A new day begins. Take your time, {name}.",
+   "tone": "R",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m008",
+   "text": "Morning. Quiet start, good start.",
+   "tone": "N",
+   "trigger": "boot",
+   "boot": "overnight_morning"
+  },
+  {
+   "id": "m009",
+   "text": "Fresh restart, {name}. Everything is in order.",
+   "tone": "A",
+   "trigger": "boot",
+   "boot": "other"
+  },
+  {
+   "id": "m010",
+   "text": "Welcome back, {name}. All set.",
+   "tone": "R",
+   "trigger": "boot",
+   "boot": "other"
+  },
+  {
+   "id": "m011",
+   "text": "Good evening, {name}. Ready when you are.",
+   "tone": "S",
+   "trigger": "boot",
+   "boot": "other",
+   "tb": [
+    "evening",
+    "dinner",
+    "night"
+   ]
+  },
+  {
+   "id": "m012",
+   "text": "Back from the dark, {name}. Let's go.",
+   "tone": "A",
+   "trigger": "boot",
+   "boot": "other"
+  },
+  {
+   "id": "m013",
+   "text": "All systems ready, {name}. Welcome.",
+   "tone": "S",
+   "trigger": "boot",
+   "boot": "other"
+  },
+  {
+   "id": "m014",
+   "text": "Back so soon, {name}?",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m015",
+   "text": "Short break, {name}. We're still here.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m016",
+   "text": "Missed something, {name}?",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m017",
+   "text": "Right where you left it, {name}.",
+   "tone": "R",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m018",
+   "text": "That was quick, {name}.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m019",
+   "text": "Welcome back. No time lost.",
+   "tone": "N",
+   "trigger": "wake",
+   "gap": [
+    "short"
+   ]
+  },
+  {
+   "id": "m020",
+   "text": "Welcome back, {name}. Nothing changed.",
+   "tone": "R",
+   "trigger": "wake",
+   "gap": [
+    "medium"
+   ]
+  },
+  {
+   "id": "m021",
+   "text": "Break over, {name}? Let's continue.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "medium"
+   ]
+  },
+  {
+   "id": "m022",
+   "text": "Ready for round two, {name}?",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "medium"
+   ]
+  },
+  {
+   "id": "m023",
+   "text": "Back again. Pick up where you left off.",
+   "tone": "N",
+   "trigger": "wake",
+   "gap": [
+    "medium"
+   ]
+  },
+  {
+   "id": "m024",
+   "text": "Welcome back, {name}. Rested?",
+   "tone": "R",
+   "trigger": "wake",
+   "gap": [
+    "long"
+   ]
+  },
+  {
+   "id": "m025",
+   "text": "A few hours, {name}. Missed you.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "long"
+   ]
+  },
+  {
+   "id": "m026",
+   "text": "Everything stayed exactly as you left it, {name}.",
+   "tone": "R",
+   "trigger": "wake",
+   "gap": [
+    "long"
+   ]
+  },
+  {
+   "id": "m027",
+   "text": "Good to see you again, {name}.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "long"
+   ]
+  },
+  {
+   "id": "m028",
+   "text": "Welcome back, {name}. Ready when you are.",
+   "tone": "S",
+   "trigger": "wake",
+   "gap": [
+    "long"
+   ]
+  },
+  {
+   "id": "m029",
+   "text": "It's been a while, {name}. Everything's still here.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "longer"
+   ]
+  },
+  {
+   "id": "m030",
+   "text": "Long time, {name}. The TV missed you.",
+   "tone": "R",
+   "trigger": "wake",
+   "gap": [
+    "longer"
+   ]
+  },
+  {
+   "id": "m031",
+   "text": "A full day away. Welcome back, {name}.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "longer"
+   ]
+  },
+  {
+   "id": "m032",
+   "text": "Welcome back, {name}. Your apps are waiting.",
+   "tone": "S",
+   "trigger": "wake",
+   "gap": [
+    "longer"
+   ]
+  },
+  {
+   "id": "m033",
+   "text": "Dust off the remote, {name}. We're back.",
+   "tone": "A",
+   "trigger": "wake",
+   "gap": [
+    "longer"
+   ]
+  },
+  {
+   "id": "m034",
+   "text": "Enjoyed the scene, {name}?",
+   "tone": "A",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m035",
+   "text": "Nice view, right? Back to it, {name}.",
+   "tone": "A",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m036",
+   "text": "That was a good one, {name}. What next?",
+   "tone": "A",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m037",
+   "text": "The scenery will be here if you miss it.",
+   "tone": "N",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m038",
+   "text": "Beautiful, wasn't it? Back to business, {name}.",
+   "tone": "R",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m039",
+   "text": "Back from the clouds, {name}.",
+   "tone": "A",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m040",
+   "text": "Postcard over. Let's watch something.",
+   "tone": "N",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m041",
+   "text": "Hope that was relaxing, {name}.",
+   "tone": "R",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m042",
+   "text": "That was a long one, {name}. Hope you enjoyed the view.",
+   "tone": "A",
+   "trigger": "screensaver",
+   "ssLong": true
+  },
+  {
+   "id": "m043",
+   "text": "Early start, {name}. Good morning.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "early_morning"
+   ]
+  },
+  {
+   "id": "m044",
+   "text": "Up before the sun, {name}?",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "early_morning"
+   ]
+  },
+  {
+   "id": "m045",
+   "text": "Quiet morning, {name}. Take it easy.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "early_morning"
+   ]
+  },
+  {
+   "id": "m046",
+   "text": "Early bird, {name}. Chai first?",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "early_morning"
+   ]
+  },
+  {
+   "id": "m047",
+   "text": "Good morning, {name}. Make it a good one.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m048",
+   "text": "Morning, {name}. Today looks good.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m049",
+   "text": "A fresh day awaits, {name}.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m050",
+   "text": "Good morning, {name}. Quick catch-up, then the day?",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m051",
+   "text": "Good afternoon, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m052",
+   "text": "Lunch break, {name}? You earned it.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m053",
+   "text": "Afternoon, {name}. Time for a breather.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m054",
+   "text": "Good afternoon, {name}. Ready when you are.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m055",
+   "text": "Midday break, {name}. Make it count.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m056",
+   "text": "Good evening, {name}. Day done.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m057",
+   "text": "Evening, {name}. The couch has been waiting.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m058",
+   "text": "Welcome home, {name}.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m059",
+   "text": "Good evening, {name}. Everything is ready.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m060",
+   "text": "Golden hour, {name}. Time to unwind.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m061",
+   "text": "Dinner time, {name}? Pick something light.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "dinner"
+   ]
+  },
+  {
+   "id": "m062",
+   "text": "Dinner and a show, {name}?",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "dinner"
+   ]
+  },
+  {
+   "id": "m063",
+   "text": "Food first, {name}. Entertainment after.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "dinner"
+   ]
+  },
+  {
+   "id": "m064",
+   "text": "Something good to watch while you eat, {name}?",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "dinner"
+   ]
+  },
+  {
+   "id": "m065",
+   "text": "Good evening, {name}. Enjoy your dinner.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "dinner"
+   ]
+  },
+  {
+   "id": "m066",
+   "text": "Good night, {name}. Wind down.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m067",
+   "text": "Easy night, {name}? One episode, maybe two.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m068",
+   "text": "Night mode on, {name}.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m069",
+   "text": "A calm night, {name}. Relax.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m070",
+   "text": "Long day, {name}? Time to switch off.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m071",
+   "text": "Still up, {name}? Sleep is a feature too.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "late_night"
+   ]
+  },
+  {
+   "id": "m072",
+   "text": "It's late, {name}. One more, then bed?",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "late_night"
+   ]
+  },
+  {
+   "id": "m073",
+   "text": "Midnight, {name}. Tomorrow will thank you.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "late_night"
+   ]
+  },
+  {
+   "id": "m074",
+   "text": "Late night, {name}. Keep the volume low.",
+   "tone": "A",
+   "trigger": "any",
+   "tb": [
+    "late_night"
+   ]
+  },
+  {
+   "id": "m075",
+   "text": "Past midnight, {name}. Rest well.",
+   "tone": "R",
+   "trigger": "any",
+   "tb": [
+    "late_night"
+   ]
+  },
+  {
+   "id": "m076",
+   "text": "Monday, {name}. Strong start.",
+   "tone": "S",
+   "trigger": "any",
+   "days": [
+    "mon"
+   ],
+   "tb": [
+    "early_morning",
+    "morning"
+   ]
+  },
+  {
+   "id": "m077",
+   "text": "Monday again, {name}? Gentle start.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "mon"
+   ],
+   "tb": [
+    "early_morning",
+    "morning",
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m078",
+   "text": "New week, {name}. Let's make it good.",
+   "tone": "R",
+   "trigger": "any",
+   "days": [
+    "mon"
+   ]
+  },
+  {
+   "id": "m079",
+   "text": "Midweek, {name}. Halfway there.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "wed"
+   ]
+  },
+  {
+   "id": "m080",
+   "text": "Almost Friday, {name}. Hang in there.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "thu"
+   ]
+  },
+  {
+   "id": "m081",
+   "text": "Friday, {name}! You made it.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "fri"
+   ],
+   "tb": [
+    "morning",
+    "afternoon",
+    "evening"
+   ]
+  },
+  {
+   "id": "m082",
+   "text": "Friday evening, {name}. Well earned.",
+   "tone": "R",
+   "trigger": "any",
+   "days": [
+    "fri"
+   ],
+   "tb": [
+    "evening",
+    "dinner"
+   ]
+  },
+  {
+   "id": "m083",
+   "text": "Saturday, {name}. No alarms today.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "sat"
+   ]
+  },
+  {
+   "id": "m084",
+   "text": "Weekend mode on, {name}.",
+   "tone": "A",
+   "trigger": "any",
+   "daytype": "weekend"
+  },
+  {
+   "id": "m085",
+   "text": "Slow Sunday, {name}. Take it easy.",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "sun"
+   ]
+  },
+  {
+   "id": "m086",
+   "text": "Sunday, {name}. A day to recharge.",
+   "tone": "R",
+   "trigger": "any",
+   "days": [
+    "sun"
+   ]
+  },
+  {
+   "id": "m087",
+   "text": "Sunday movie time, {name}?",
+   "tone": "A",
+   "trigger": "any",
+   "days": [
+    "sun"
+   ],
+   "tb": [
+    "afternoon",
+    "evening",
+    "dinner"
+   ]
+  },
+  {
+   "id": "m088",
+   "text": "Sunday night, {name}. One last episode?",
+   "tone": "R",
+   "trigger": "any",
+   "days": [
+    "sun"
+   ],
+   "tb": [
+    "night"
+   ]
+  },
+  {
+   "id": "m089",
+   "text": "Happy birthday, {name}! {age} looks great on you.",
+   "tone": "A",
+   "trigger": "any",
+   "needs": [
+    "birthYear"
+   ],
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m090",
+   "text": "Happy Birthday, {name}! Wishing you a wonderful year ahead.",
+   "tone": "R",
+   "trigger": "any",
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m091",
+   "text": "Many happy returns, {name}. Today is all about you.",
+   "tone": "S",
+   "trigger": "any",
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m092",
+   "text": "{age} years young, {name}. Cake first, TV second!",
+   "tone": "A",
+   "trigger": "any",
+   "needs": [
+    "birthYear"
+   ],
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m093",
+   "text": "Happy birthday, {name}! The whole screen is yours today.",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m094",
+   "text": "Congratulations on turning {age}, {name}. Enjoy your day.",
+   "tone": "R",
+   "trigger": "any",
+   "needs": [
+    "birthYear"
+   ],
+   "special": "birthday_self",
+   "alwaysName": true
+  },
+  {
+   "id": "m095",
+   "text": "Your big day is tomorrow, {name}. Any plans?",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_self_eve",
+   "alwaysName": true
+  },
+  {
+   "id": "m096",
+   "text": "It's {mother}'s birthday today, {name}. Call her first!",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_mother",
+   "alwaysName": true
+  },
+  {
+   "id": "m097",
+   "text": "{mother}'s birthday today, {name}. A call would mean the world.",
+   "tone": "R",
+   "trigger": "any",
+   "special": "birthday_mother",
+   "alwaysName": true
+  },
+  {
+   "id": "m098",
+   "text": "Tomorrow is {mother}'s birthday, {name}. Plan something nice.",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_mother_eve",
+   "alwaysName": true
+  },
+  {
+   "id": "m099",
+   "text": "It's {father}'s birthday today, {name}. Give him a call!",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_father",
+   "alwaysName": true
+  },
+  {
+   "id": "m100",
+   "text": "{father}'s birthday today, {name}. A quick call would make his day.",
+   "tone": "R",
+   "trigger": "any",
+   "special": "birthday_father",
+   "alwaysName": true
+  },
+  {
+   "id": "m101",
+   "text": "{father}'s birthday is tomorrow, {name}. Don't forget.",
+   "tone": "A",
+   "trigger": "any",
+   "special": "birthday_father_eve",
+   "alwaysName": true
+  },
+  {
+   "id": "m102",
+   "text": "Choti Diwali tonight, {name}. Time to light the diyas.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "choti_diwali"
+  },
+  {
+   "id": "m103",
+   "text": "Happy Diwali, {name}! May your year glow.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "diwali"
+  },
+  {
+   "id": "m104",
+   "text": "Shubh Deepavali, {name}! Lights on, TV later.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "diwali"
+  },
+  {
+   "id": "m105",
+   "text": "Happy Diwali, {name}. Wishing you light and prosperity.",
+   "tone": "S",
+   "trigger": "any",
+   "fest": "diwali"
+  },
+  {
+   "id": "m106",
+   "text": "Happy Dhanteras, {name}. Prosperity to your home.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "dhanteras"
+  },
+  {
+   "id": "m107",
+   "text": "Happy Bhai Dooj, {name}!",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "bhai_dooj"
+  },
+  {
+   "id": "m108",
+   "text": "Happy Holi, {name}! Colour up the day.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "holi"
+  },
+  {
+   "id": "m109",
+   "text": "Happy Makar Sankranti, {name}. Sweet words, sweet day.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "makar_sankranti"
+  },
+  {
+   "id": "m110",
+   "text": "Happy Republic Day, {name}. Jai Hind.",
+   "tone": "S",
+   "trigger": "any",
+   "fest": "republic_day"
+  },
+  {
+   "id": "m111",
+   "text": "Happy Independence Day, {name}. Jai Hind!",
+   "tone": "S",
+   "trigger": "any",
+   "fest": "independence_day"
+  },
+  {
+   "id": "m112",
+   "text": "Gandhi Jayanti today. Small steps, big change, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "gandhi_jayanti"
+  },
+  {
+   "id": "m113",
+   "text": "Happy Raksha Bandhan, {name}!",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "raksha_bandhan"
+  },
+  {
+   "id": "m114",
+   "text": "Happy Janmashtami, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "janmashtami"
+  },
+  {
+   "id": "m115",
+   "text": "Ganpati Bappa Morya, {name}! Happy Ganesh Chaturthi.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "ganesh_chaturthi"
+  },
+  {
+   "id": "m116",
+   "text": "Happy Navratri, {name}. Nine nights of joy.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "navratri_begins"
+  },
+  {
+   "id": "m117",
+   "text": "Happy Dussehra, {name}! Good wins again.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "dussehra"
+  },
+  {
+   "id": "m118",
+   "text": "Happy Onam, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "onam"
+  },
+  {
+   "id": "m119",
+   "text": "Last night of the year, {name}. Make it a good one.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "new_years_eve"
+  },
+  {
+   "id": "m120",
+   "text": "Happy New Year, {name}! Here's to {year}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "new_year"
+  },
+  {
+   "id": "m121",
+   "text": "Happy New Year, {name}. Here's to {year}.",
+   "tone": "S",
+   "trigger": "any",
+   "fest": "new_year"
+  },
+  {
+   "id": "m122",
+   "text": "Happy Maha Shivratri, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "maha_shivratri"
+  },
+  {
+   "id": "m123",
+   "text": "Happy Ram Navami, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "ram_navami"
+  },
+  {
+   "id": "m124",
+   "text": "Happy Ugadi and Gudi Padwa, {name}!",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "ugadi"
+  },
+  {
+   "id": "m125",
+   "text": "Happy Govardhan Puja, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "govardhan_puja"
+  },
+  {
+   "id": "m126",
+   "text": "Happy Chhath Puja, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "chhath"
+  },
+  {
+   "id": "m127",
+   "text": "Happy Dev Diwali, {name}. Lamps everywhere.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "dev_diwali"
+  },
+  {
+   "id": "m128",
+   "text": "Happy Vasant Panchami, {name}. Spring is here.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "vasant_panchami"
+  },
+  {
+   "id": "m129",
+   "text": "Happy Pongal, {name}!",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "pongal"
+  },
+  {
+   "id": "m130",
+   "text": "Happy Lohri, {name}!",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "lohri"
+  },
+  {
+   "id": "m131",
+   "text": "Happy Guru Purnima, {name}. Thank your teachers.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "guru_purnima"
+  },
+  {
+   "id": "m132",
+   "text": "Happy Akshaya Tritiya, {name}. Prosperity ahead.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "akshaya_tritiya"
+  },
+  {
+   "id": "m133",
+   "text": "Happy Tamil New Year and Vishu, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "tamil_new_year_vishu"
+  },
+  {
+   "id": "m134",
+   "text": "Happy Durga Ashtami, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "durga_ashtami"
+  },
+  {
+   "id": "m135",
+   "text": "Happy Sharad Purnima, {name}. Look up at the moon.",
+   "tone": "A",
+   "trigger": "any",
+   "fest": "sharad_purnima"
+  },
+  {
+   "id": "m136",
+   "text": "Happy Nag Panchami, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "fest": "nag_panchami"
+  },
+  {
+   "id": "m137",
+   "text": "Tip: Screens off 30 minutes before bed helps you sleep.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "night",
+    "late_night"
+   ]
+  },
+  {
+   "id": "m138",
+   "text": "Tip: Lower the brightness at night. Your eyes will thank you.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "evening",
+    "night",
+    "late_night"
+   ]
+  },
+  {
+   "id": "m139",
+   "text": "Tip: Look away every 20 minutes for 20 seconds.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m140",
+   "text": "Tip: Keep a soft light behind the TV. Less eye strain.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "evening",
+    "dinner",
+    "night"
+   ]
+  },
+  {
+   "id": "m141",
+   "text": "Tip: Sit up straight. Your back will thank you.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m142",
+   "text": "Tip: Stand up and stretch between episodes.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m143",
+   "text": "Tip: Water break? Your brain runs on it too.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m144",
+   "text": "Tip: Restart the TV once a week to keep it quick.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m145",
+   "text": "Tip: Remove apps you never open. The TV runs lighter.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m146",
+   "text": "Tip: Update your apps once a month.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip"
+  },
+  {
+   "id": "m147",
+   "text": "Tip: Check the remote batteries before movie night.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "evening",
+    "dinner"
+   ]
+  },
+  {
+   "id": "m148",
+   "text": "Tip: Eat before you binge. Snacks are for later.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "dinner",
+    "evening"
+   ]
+  },
+  {
+   "id": "m149",
+   "text": "Tip: Pick the next episode before you get comfy.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "tb": [
+    "evening",
+    "dinner",
+    "night"
+   ]
+  },
+  {
+   "id": "m150",
+   "text": "Tip: Lost the remote? Your phone has you covered.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "tip",
+   "cond": "bridge_on"
+  },
+  {
+   "id": "m151",
+   "text": "Booting beats thinking. Welcome back, {name}.",
+   "tone": "A",
+   "trigger": "any",
+   "kind": "rare"
+  },
+  {
+   "id": "m152",
+   "text": "I'd say I was thinking. I was loading.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "rare"
+  },
+  {
+   "id": "m153",
+   "text": "Plot twist: nothing has changed, {name}.",
+   "tone": "R",
+   "trigger": "any",
+   "kind": "rare"
+  },
+  {
+   "id": "m154",
+   "text": "Another day, another remote hunt, {name}.",
+   "tone": "A",
+   "trigger": "any",
+   "kind": "rare"
+  },
+  {
+   "id": "m155",
+   "text": "Powered by caffeine and kilobytes.",
+   "tone": "N",
+   "trigger": "any",
+   "kind": "rare"
+  },
+  {
+   "id": "m156",
+   "text": "Good morning, {name}. Your day is queued.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "early_morning",
+    "morning"
+   ]
+  },
+  {
+   "id": "m157",
+   "text": "Welcome, {name}. All apps are ready.",
+   "tone": "S",
+   "trigger": "any"
+  },
+  {
+   "id": "m158",
+   "text": "Good evening, {name}. Tonight's viewing is open.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "evening",
+    "dinner"
+   ]
+  },
+  {
+   "id": "m159",
+   "text": "{name}, systems are online.",
+   "tone": "S",
+   "trigger": "boot"
+  },
+  {
+   "id": "m160",
+   "text": "Welcome back, {name}. Nothing needs your attention.",
+   "tone": "S",
+   "trigger": "wake",
+   "gap": [
+    "long",
+    "longer"
+   ]
+  },
+  {
+   "id": "m161",
+   "text": "Good morning, {name}. Everything is up to date.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m162",
+   "text": "Good afternoon, {name}. Standing by.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "afternoon"
+   ]
+  },
+  {
+   "id": "m163",
+   "text": "Welcome, {name}. The screen is yours.",
+   "tone": "S",
+   "trigger": "any"
+  },
+  {
+   "id": "m164",
+   "text": "Evening, {name}. Time to step away from work.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ],
+   "daytype": "weekday"
+  },
+  {
+   "id": "m165",
+   "text": "Good night, {name}. Systems will keep watch.",
+   "tone": "S",
+   "trigger": "any",
+   "tb": [
+    "night",
+    "late_night"
+   ]
+  },
+  {
+   "id": "m166",
+   "text": "Welcome back, {name}. Resuming where you left off.",
+   "tone": "S",
+   "trigger": "wake",
+   "gap": [
+    "short",
+    "medium"
+   ]
+  },
+  {
+   "id": "m167",
+   "text": "Fresh start. Everything is ready.",
+   "tone": "N",
+   "trigger": "boot"
+  },
+  {
+   "id": "m168",
+   "text": "Welcome back. Pick something good.",
+   "tone": "N",
+   "trigger": "wake"
+  },
+  {
+   "id": "m169",
+   "text": "Quiet screen, open evening.",
+   "tone": "N",
+   "trigger": "any",
+   "tb": [
+    "evening"
+   ]
+  },
+  {
+   "id": "m170",
+   "text": "Nothing urgent. Just entertainment.",
+   "tone": "N",
+   "trigger": "any"
+  },
+  {
+   "id": "m171",
+   "text": "Lights low, volume low.",
+   "tone": "N",
+   "trigger": "any",
+   "tb": [
+    "night",
+    "late_night"
+   ]
+  },
+  {
+   "id": "m172",
+   "text": "The queue is empty. Fill it well.",
+   "tone": "N",
+   "trigger": "any"
+  },
+  {
+   "id": "m173",
+   "text": "Good morning. Make it count.",
+   "tone": "N",
+   "trigger": "any",
+   "tb": [
+    "morning"
+   ]
+  },
+  {
+   "id": "m174",
+   "text": "Well, that was a long day.",
+   "tone": "N",
+   "trigger": "any",
+   "tb": [
+    "evening",
+    "dinner",
+    "night"
+   ],
+   "daytype": "weekday"
+  },
+  {
+   "id": "m175",
+   "text": "Weekend, fully loaded.",
+   "tone": "N",
+   "trigger": "any",
+   "daytype": "weekend"
+  },
+  {
+   "id": "m176",
+   "text": "Take your time. We're not going anywhere.",
+   "tone": "N",
+   "trigger": "wake",
+   "gap": [
+    "long",
+    "longer"
+   ]
+  },
+  {
+   "id": "m177",
+   "text": "Back from the clouds. Let's watch something.",
+   "tone": "N",
+   "trigger": "screensaver"
+  },
+  {
+   "id": "m178",
+   "text": "All yours.",
+   "tone": "N",
+   "trigger": "any"
+  }
+ ]
+}

@@ -85,12 +85,16 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .chip:active{transform:scale(.94)}
 .chip.act{background:var(--ac);color:var(--on);border-color:var(--ac)}
 .wp-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:420px;overflow-y:auto;padding-right:2px}
-.wp-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--ln);border-radius:12px;gap:10px}
+.wp-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--ln);border-radius:12px;gap:10px;cursor:pointer;transition:all .15s}
+.wp-item:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.18)}
+.wp-item:active{transform:scale(.985)}
+.wp-item.is-cur{border-color:rgba(110,193,255,0.38);background:rgba(110,193,255,0.07)}
 .wp-thumb{width:64px;height:36px;border-radius:6px;object-fit:cover;background:rgba(0,0,0,0.3);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)}
 .wp-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .wp-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx)}
 .wp-meta{font-size:11px;color:var(--mu);display:flex;gap:6px;align-items:center}
 .wp-badge{font-size:10px;font-weight:700;color:var(--ac);background:rgba(110,193,255,0.15);padding:1px 5px;border-radius:4px}
+.wp-set-hint{font-size:10.5px;color:var(--mu);opacity:.8}
 .btn-del{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:rgba(255,69,58,0.12);color:#ff453a;cursor:pointer;flex-shrink:0;transition:all .15s}
 .btn-del:active{transform:scale(0.92);background:rgba(255,69,58,0.25)}
 .btn-del svg{width:17px;height:17px}
@@ -149,6 +153,34 @@ svg.i{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke
     <button class="btn k" data-k="volume_up" data-r="1"><svg class="i"><use href="#i-vup"/></svg>Volume up</button>
   </div>
   <button class="btn" id="btn-screensaver" style="width:100%;margin-top:14px" title="Start Aerial Views Screensaver"><svg class="i" style="width:20px;height:20px;margin-right:6px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Start Screensaver</button>
+
+  <div class="box" style="margin-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="font-size:15px">Custom Intro</b>
+      <span class="mu sm" id="ci-stat">Prank &amp; Surprise</span>
+    </div>
+    <p class="mu sm" style="margin-bottom:12px">Play the boot/wake intro immediately with your own title and subtitle.</p>
+    <input type="text" id="ci-title" class="in" maxlength="60" placeholder="Title (e.g. Happy Birthday!)" required style="margin-bottom:10px">
+    <input type="text" id="ci-sub" class="in" maxlength="100" placeholder="Subtitle (optional message)" style="margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 90px;gap:10px;margin-bottom:14px">
+      <div>
+        <label class="mu sm" style="display:block;margin-bottom:4px;font-weight:600">Animation</label>
+        <select id="ci-anim" class="in" style="padding:11px 14px;border-radius:12px;height:46px">
+          <option value="random">Random</option>
+          <option value="pop">Pop</option>
+          <option value="fade">Fade</option>
+          <option value="slide">Slide</option>
+          <option value="letters">Letters</option>
+          <option value="shimmer">Shimmer</option>
+        </select>
+      </div>
+      <div>
+        <label class="mu sm" style="display:block;margin-bottom:4px;font-weight:600">Hold (s)</label>
+        <input type="number" id="ci-hold" class="in" min="1" max="30" value="3" style="padding:11px 14px;border-radius:12px;height:46px;text-align:center">
+      </div>
+    </div>
+    <button class="btn p" id="ci-play" style="width:100%"><svg class="i" style="width:20px;height:20px;margin-right:6px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Play on TV</button>
+  </div>
 </section>
 
 <section class="view" id="v-cast" hidden>
@@ -257,14 +289,17 @@ function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='show'+(ba
 const DEMO_APPS=[{name:'TizenTube Cobalt',package:'demo.tt',isDock:true,dockPos:0},{name:'NetMirror',package:'demo.nm',isDock:true,dockPos:1,launchOnly:true},{name:'VLC',package:'demo.vlc'},{name:'Plex',package:'demo.plex'},{name:'Files',package:'demo.files'},{name:'Settings',package:'demo.set'}];
 let demoModes={picture:{currentId:5,currentName:'Vivid',options:[{id:0,name:'Standard'},{id:3,name:'Movie'},{id:5,name:'Vivid'},{id:4,name:'Game'},{id:6,name:'Sport'},{id:21,name:'Filmmaker'},{id:2,name:'Monitor'},{id:1,name:'Custom'}]},sound:{currentId:0,currentName:'Standard',options:[{id:0,name:'Standard'},{id:1,name:'Movie'},{id:5,name:'Music'},{id:3,name:'Game'},{id:2,name:'News'},{id:6,name:'Sport'},{id:4,name:'Custom'}]},dts:{virtualX:true,bass:false,clarity:true,surround:false}};
 let demoWallpapers=[{name:'02_mountain_lake.jpg',size:133018},{name:'03_waterfall.jpg',size:223942},{name:'04_deep_space.jpg',size:283938}];
+let demoCurrentWallpaper=demoWallpapers[0]?.name||'';
 async function demo(p,o){await new Promise(r=>setTimeout(r,180));const b=o.body?JSON.parse(o.body):{};
  if(p==='/apps')return{apps:DEMO_APPS};
  if(p==='/stats')return{ram:{percentUsed:56+Math.random()*6,usedMb:1190,totalMb:2048},storage:{percentUsed:53.6,usedGb:8.6,totalGb:16},system:{uptimeFormatted:'23h 35m',androidVersion:'14 (API 34)',deviceModel:'Xiaomi TV'},wifi:{rssi:-54,ip:'192.168.1.36'}};
- if(p==='/wallpapers')return{count:demoWallpapers.length,current:demoWallpapers[0]?.name||'',wallpapers:demoWallpapers};
- if(p==='/wallpaper/delete'){demoWallpapers=demoWallpapers.filter(w=>w.name!==b.name);return{status:'ok',deleted:b.name}};
+ if(p==='/wallpapers')return{count:demoWallpapers.length,current:demoCurrentWallpaper||(demoWallpapers[0]?.name||''),wallpapers:demoWallpapers};
+ if(p==='/wallpaper/delete'){demoWallpapers=demoWallpapers.filter(w=>w.name!==b.name);if(demoCurrentWallpaper===b.name)demoCurrentWallpaper=demoWallpapers[0]?.name||'';return{status:'ok',deleted:b.name}};
+ if(p.startsWith('/wallpaper/set')){const qName=new URLSearchParams(p.includes('?')?p.split('?')[1]:'').get('name');demoCurrentWallpaper=b.name||qName||(demoWallpapers[0]?.name||'');return{status:'ok',current:demoCurrentWallpaper}};
  if(p==='/wallpaper')return{status:'ok',filename:'demo_4k.jpg'};
  if(p==='/wallpaper/next'||p==='/wallpaper/prev'||p==='/wallpaper/cycle')return{status:'ok'};
  if(p==='/screensaver')return{status:'ok'};
+ if(p==='/intro')return{status:'ok',title:b.title||'Demo',holdSeconds:b.holdSeconds||3};
  if(p==='/modes'){
   if(o.method==='POST'){
    if(b.type==='picture'){demoModes.picture.currentId=b.mode;const f=demoModes.picture.options.find(x=>x.id===b.mode);if(f)demoModes.picture.currentName=f.name}
@@ -368,16 +403,16 @@ async function loadWallpapers(){
       const sizeStr = (w.size ? (w.size > 1048576 ? (w.size/1048576).toFixed(1)+' MB' : Math.round(w.size/1024)+' KB') : '');
       const thumbUrl = DEMO ? '' : `/wallpaper/thumb?name=${encodeURIComponent(w.name)}&token=${encodeURIComponent(token)}`;
       return `
-      <div class="wp-item" data-name="${esc(w.name)}">
+      <div class="wp-item${isCur ? ' is-cur' : ''}" data-name="${esc(w.name)}" onclick="setWallpaper('${esc(w.name)}')" title="Click to display on TV">
         <img class="wp-thumb" src="${thumbUrl}" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="wp-info">
           <span class="wp-name" title="${esc(w.name)}">${esc(w.name)}</span>
           <div class="wp-meta">
             ${sizeStr ? `<span>${sizeStr}</span>` : ''}
-            ${isCur ? `<span class="wp-badge">Active</span>` : ''}
+            ${isCur ? `<span class="wp-badge">Active</span>` : `<span class="wp-set-hint">Tap to set</span>`}
           </div>
         </div>
-        <button class="btn-del" title="Delete from TV" onclick="deleteWallpaper('${esc(w.name)}')">
+        <button class="btn-del" title="Delete from TV" onclick="event.stopPropagation();deleteWallpaper('${esc(w.name)}')">
           <svg class="i"><use href="#i-trash"/></svg>
         </button>
       </div>`;
@@ -387,6 +422,18 @@ async function loadWallpapers(){
   }
 }
 const loadWpCount = loadWallpapers;
+
+async function setWallpaper(name){
+  buzz();
+  toast(`Setting TV wallpaper…`);
+  try{
+    await api('/wallpaper/set?name='+encodeURIComponent(name),{method:'POST',body:JSON.stringify({name})});
+    toast(`Set TV wallpaper: ${name}`);
+    await loadWallpapers();
+  }catch(e){
+    toast(e.message||'Failed to set wallpaper',1);
+  }
+}
 
 async function deleteWallpaper(name){
   buzz();
@@ -428,6 +475,38 @@ async function triggerScreensaver(){
 }
 const btnSs=$('#btn-screensaver');if(btnSs)btnSs.onclick=triggerScreensaver;
 const wpSs=$('#wp-screensaver');if(wpSs)wpSs.onclick=triggerScreensaver;
+const ciPlay=$('#ci-play');
+if(ciPlay){
+ ciPlay.onclick=async()=>{
+  const title=($('#ci-title').value||'').trim();
+  const subtitle=($('#ci-sub').value||'').trim();
+  const anim=$('#ci-anim').value||'random';
+  let hold=parseInt($('#ci-hold').value,10);
+  if(isNaN(hold)||hold<1)hold=1;
+  if(hold>30)hold=30;
+  if(!title){
+   toast('Title is required',1);
+   $('#ci-title').focus();
+   return;
+  }
+  buzz();
+  ciPlay.disabled=true;
+  const origText=ciPlay.innerHTML;
+  ciPlay.textContent='Playing…';
+  try{
+   await api('/intro',{
+    method:'POST',
+    body:JSON.stringify({title,subtitle,animation:anim,holdSeconds:hold})
+   });
+   toast('Intro playing on TV!');
+  }catch(e){
+   if(e.message!=='auth')toast(e.message||'Failed to trigger intro',1);
+  }finally{
+   ciPlay.disabled=false;
+   ciPlay.innerHTML=origText;
+  }
+ };
+}
 function inspectImg(file){
  return new Promise((resolve,reject)=>{
   const url=URL.createObjectURL(file),img=new Image();

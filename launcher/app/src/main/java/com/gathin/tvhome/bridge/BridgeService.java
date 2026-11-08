@@ -81,15 +81,23 @@ public class BridgeService extends Service {
         return START_STICKY;
     }
 
+    private static volatile boolean running = false;
+
+    public static boolean isBridgeRunning() {
+        return running;
+    }
+
     private synchronized void startServerInternal() {
         if (server != null) return;
         try {
             server = new BridgeHttpServer(this, BridgeConfig.SERVER_PORT);
             server.start();
+            running = true;
             Log.i(TAG, "BridgeHttpServer started successfully on port " + BridgeConfig.SERVER_PORT);
         } catch (IOException e) {
             Log.e(TAG, "Failed to start BridgeHttpServer on port " + BridgeConfig.SERVER_PORT, e);
             server = null;
+            running = false;
         }
     }
 
@@ -97,6 +105,7 @@ public class BridgeService extends Service {
     public void onDestroy() {
         Log.i(TAG, "BridgeService onDestroy");
         executor.shutdownNow();
+        running = false;
         if (server != null) {
             server.stop();
             server = null;

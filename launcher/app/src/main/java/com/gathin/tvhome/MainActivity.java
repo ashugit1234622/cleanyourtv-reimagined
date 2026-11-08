@@ -81,7 +81,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -272,6 +275,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static final String ACTION_PREVIEW_INTRO = "com.gathin.tvhome.action.PREVIEW_INTRO";
     private boolean previewFromSettings = false;
     private BootIntroOverlay bootIntroOverlay;
+    private static volatile boolean customIntroPending = false;
+    private GreetingEngine greetingEngine = null;
     private boolean screenWokeUp = false;
     private boolean wasNonInteractive = false;
     private boolean isDreaming = false;
@@ -1075,7 +1080,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             openInputsIfAsked(getIntent());
         }
         if (savedInstanceState == null) {
-            checkAndTriggerBootIntro(getIntent());
+            boolean isCustom = getIntent() != null && (getIntent().getBooleanExtra("custom_intro", false) || getIntent().getBooleanExtra("test_custom_intro", false));
+            if (isCustom) {
+                customIntroPending = true;
+                String title = getIntent().hasExtra("custom_title") ? getIntent().getStringExtra("custom_title") : getIntent().getStringExtra("test_title");
+                String subtitle = getIntent().hasExtra("custom_subtitle") ? getIntent().getStringExtra("custom_subtitle") : getIntent().getStringExtra("test_sub");
+                String anim = getIntent().hasExtra("custom_anim") ? getIntent().getStringExtra("custom_anim") : getIntent().getStringExtra("test_anim");
+                int holdSec = getIntent().hasExtra("test_hold") ? getIntent().getIntExtra("test_hold", 3) : -1;
+                int holdMs = holdSec > 0 ? (holdSec * 1000) : getIntent().getIntExtra("custom_hold", 3000);
+                getWindow().getDecorView().post(() -> {
+                    if (!isFinishing() && !isDestroyed()) {
+                        startCustomIntro(title, subtitle, anim, holdMs);
+                    }
+                });
+            } else {
+                checkAndTriggerBootIntro(getIntent());
+            }
         }
     }
 
@@ -1093,7 +1113,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (isPreview) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
             String forcedAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
-            triggerBootIntro(false, -1, forcedAnim, true);
+            triggerBootIntro(false, -1, forcedAnim, true, "preview", intent);
             return;
         }
 
@@ -1115,13 +1135,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (headerFocus != null) {
                 headerFocus.setSuppressed(true);
             }
-            triggerBootIntro(testWake, testMsg, testAnim, testBoot);
+            triggerBootIntro(testWake, testMsg, testAnim, testBoot, testWake ? "wake" : "boot", intent);
         } else {
             focusFirstDockTile();
         }
     }
 
     private void checkAndTriggerWakeIntro() {
+        if (customIntroPending) return;
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) return;
 
         long now = SystemClock.elapsedRealtime();
@@ -1202,14 +1223,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (headerFocus != null) {
             headerFocus.setSuppressed(true);
         }
-        triggerBootIntro(true, -1, null, false);
+        triggerBootIntro(true, -1, null, false, decision.reason, null);
     }
 
     private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation) {
-        triggerBootIntro(isWake, forcedMessageIndex, forcedAnimation, false);
+        triggerBootIntro(isWake, forcedMessageIndex, forcedAnimation, false, isWake ? "wake" : "boot", null);
     }
 
     private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation, boolean isPreview) {
+        triggerBootIntro(isWake, forcedMessageIndex, forcedAnimation, isPreview, isWake ? "wake" : "boot", null);
+    }
+
+    private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation, boolean isPreview, String wakeReason, Intent debugIntent) {
         if (bootIntroOverlay != null) {
             bootIntroOverlay.skip();
         }
@@ -1230,24 +1255,119 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cfg.bootIntroText != null && !cfg.bootIntroText.isEmpty()) {
             title = cfg.bootIntroText;
             subtitle = "";
-        } else {
+        } else if (forcedMessageIndex >= 0) {
             String[] raw = getResources().getStringArray(R.array.boot_intro_messages);
             List<BootIntro.IntroMessage> list = BootIntro.parseMessages(raw);
-            int lastIndex = prefs.getInt(BootIntro.KEY_LAST_MESSAGE_INDEX, -1);
-            int selectedIndex;
-            if (forcedMessageIndex >= 0 && forcedMessageIndex < list.size()) {
-                selectedIndex = forcedMessageIndex;
-            } else {
-                int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-                selectedIndex = BootIntro.selectMessageIndex(list, hour, isWake, lastIndex, new Random());
-            }
-
-            if (selectedIndex >= 0 && selectedIndex < list.size()) {
-                BootIntro.IntroMessage chosen = list.get(selectedIndex);
+            if (forcedMessageIndex < list.size()) {
+                BootIntro.IntroMessage chosen = list.get(forcedMessageIndex);
                 title = chosen.title;
                 subtitle = chosen.subtitle;
                 if (!isPreview) {
-                    prefs.edit().putInt(BootIntro.KEY_LAST_MESSAGE_INDEX, selectedIndex).apply();
+                    prefs.edit().putInt(BootIntro.KEY_LAST_MESSAGE_INDEX, forcedMessageIndex).apply();
+                }
+            }
+        } else {
+            // Smart Greeting Engine selection
+            GreetingResult res = null;
+            try {
+                if (greetingEngine == null) {
+                    try (InputStream is = getAssets().open("greetings.json")) {
+                        greetingEngine = GreetingEngine.fromStream(is);
+                    } catch (Exception e) {
+                        android.util.Log.e("GreetingEngine", "Failed to load greetings.json asset", e);
+                    }
+                }
+
+                if (greetingEngine != null) {
+                    String testTrigger = debugIntent != null ? debugIntent.getStringExtra("test_trigger") : null;
+                    String testTime = debugIntent != null ? debugIntent.getStringExtra("test_time") : null;
+                    String testDate = debugIntent != null ? debugIntent.getStringExtra("test_date") : null;
+                    String testName = debugIntent != null ? debugIntent.getStringExtra("test_name") : null;
+                    int testGapMin = debugIntent != null && debugIntent.hasExtra("test_gap_min") ? debugIntent.getIntExtra("test_gap_min", -1) : -1;
+                    int testSsMin = debugIntent != null && debugIntent.hasExtra("test_ss_min") ? debugIntent.getIntExtra("test_ss_min", -1) : -1;
+                    Boolean testBridge = debugIntent != null && debugIntent.hasExtra("test_bridge") ? debugIntent.getBooleanExtra("test_bridge", false) : null;
+
+                    String trigger;
+                    if (testTrigger != null && !testTrigger.trim().isEmpty()) {
+                        trigger = testTrigger.trim().toLowerCase(Locale.ROOT);
+                    } else if (isWake) {
+                        if ("dreaming".equals(wakeReason) || "dream_ended".equals(wakeReason)) {
+                            trigger = "screensaver";
+                        } else {
+                            trigger = "wake";
+                        }
+                    } else {
+                        trigger = "boot";
+                    }
+
+                    LocalDateTime now = LocalDateTime.now();
+                    if (testDate != null && !testDate.trim().isEmpty()) {
+                        try {
+                            String td = testDate.trim();
+                            if (td.length() == 5 && td.contains("-")) {
+                                String[] parts = td.split("-");
+                                now = now.withMonth(Integer.parseInt(parts[0])).withDayOfMonth(Integer.parseInt(parts[1]));
+                            } else {
+                                LocalDate ld = LocalDate.parse(td);
+                                now = now.withYear(ld.getYear()).withMonth(ld.getMonthValue()).withDayOfMonth(ld.getDayOfMonth());
+                            }
+                        } catch (Exception e) {
+                            android.util.Log.w("GreetingEngine", "Failed to parse test_date: " + testDate, e);
+                        }
+                    }
+                    if (testTime != null && !testTime.trim().isEmpty()) {
+                        try {
+                            LocalTime lt = LocalTime.parse(testTime.trim());
+                            now = now.withHour(lt.getHour()).withMinute(lt.getMinute()).withSecond(0).withNano(0);
+                        } catch (Exception e) {
+                            android.util.Log.w("GreetingEngine", "Failed to parse test_time: " + testTime, e);
+                        }
+                    }
+
+                    long gapMinutes;
+                    if (testGapMin >= 0) {
+                        gapMinutes = testGapMin;
+                    } else {
+                        long lastStopTime = prefs.getLong(BootIntro.KEY_LAST_STOP_TIME, 0);
+                        long nowElapsed = SystemClock.elapsedRealtime();
+                        long stoppedMs = (lastStopTime > 0 && nowElapsed >= lastStopTime) ? (nowElapsed - lastStopTime) : 0;
+                        gapMinutes = stoppedMs / 60_000L;
+                    }
+
+                    long ssMinutes = (testSsMin >= 0) ? testSsMin : BootIntro.getScreensaverDurationMinutes();
+                    boolean bridgeOn = (testBridge != null) ? testBridge : com.gathin.tvhome.bridge.BridgeService.isBridgeRunning();
+                    String bootClass = BootIntro.evaluateBootClass(this, now);
+                    String forcedTier = (testName != null && !testName.trim().isEmpty()) ? testName.trim() : null;
+
+                    GreetingContext context = new GreetingContext(trigger, now, gapMinutes, ssMinutes, bridgeOn, bootClass, forcedTier);
+                    List<String> history = BootIntro.getGreetingHistory(this);
+                    res = greetingEngine.evaluate(context, history);
+                }
+            } catch (Exception e) {
+                android.util.Log.e("GreetingEngine", "Failed to evaluate greeting engine, falling back", e);
+            }
+
+            if (res != null) {
+                title = res.text;
+                subtitle = "";
+                if (!isPreview) {
+                    BootIntro.recordGreetingId(this, res.id);
+                }
+                android.util.Log.i("GreetingEngine", "[" + res.id + "] tier=" + res.tier + " named=" + res.isNamed + " pool=" + res.pool + " text=\"" + res.text + "\"");
+            } else {
+                // Built-in fallback
+                String[] raw = getResources().getStringArray(R.array.boot_intro_messages);
+                List<BootIntro.IntroMessage> list = BootIntro.parseMessages(raw);
+                int lastIndex = prefs.getInt(BootIntro.KEY_LAST_MESSAGE_INDEX, -1);
+                int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                int selectedIndex = BootIntro.selectMessageIndex(list, hour, isWake, lastIndex, new Random());
+                if (selectedIndex >= 0 && selectedIndex < list.size()) {
+                    BootIntro.IntroMessage chosen = list.get(selectedIndex);
+                    title = chosen.title;
+                    subtitle = chosen.subtitle;
+                    if (!isPreview) {
+                        prefs.edit().putInt(BootIntro.KEY_LAST_MESSAGE_INDEX, selectedIndex).apply();
+                    }
                 }
             }
         }
@@ -1393,17 +1513,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE)
                     .edit().putInt(BootIntro.KEY_TEST_WAKE_GAP, gap).apply();
         }
+        boolean isCustomIntro = intent != null && (intent.getBooleanExtra("custom_intro", false) || intent.getBooleanExtra("test_custom_intro", false));
+        if (isCustomIntro) {
+            customIntroPending = true;
+            String title = intent.hasExtra("custom_title") ? intent.getStringExtra("custom_title") : intent.getStringExtra("test_title");
+            String subtitle = intent.hasExtra("custom_subtitle") ? intent.getStringExtra("custom_subtitle") : intent.getStringExtra("test_sub");
+            String anim = intent.hasExtra("custom_anim") ? intent.getStringExtra("custom_anim") : intent.getStringExtra("test_anim");
+            int holdSec = intent.hasExtra("test_hold") ? intent.getIntExtra("test_hold", 3) : -1;
+            int holdMs = holdSec > 0 ? (holdSec * 1000) : intent.getIntExtra("custom_hold", 3000);
+            getWindow().getDecorView().post(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    startCustomIntro(title, subtitle, anim, holdMs);
+                }
+            });
+            return;
+        }
         if (intent != null && (ACTION_PREVIEW_INTRO.equals(intent.getAction()) || intent.getBooleanExtra("test_preview", false))) {
             previewFromSettings = intent.getBooleanExtra("preview_from_settings", false);
             String forcedAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
-            triggerBootIntro(false, -1, forcedAnim, true);
+            triggerBootIntro(false, -1, forcedAnim, true, "preview", intent);
             return;
         }
         if (intent != null && intent.getBooleanExtra(BootIntro.EXTRA_TEST, false)) {
             int testMsg = intent.getIntExtra(BootIntro.EXTRA_TEST_MESSAGE, -1);
             String testAnim = intent.getStringExtra(BootIntro.EXTRA_TEST_ANIMATION);
             boolean testWake = intent.getBooleanExtra(BootIntro.EXTRA_TEST_WAKE, false);
-            triggerBootIntro(testWake, testMsg, testAnim);
+            triggerBootIntro(testWake, testMsg, testAnim, false, testWake ? "wake" : "boot", intent);
             return;
         }
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
@@ -1721,6 +1856,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (nonInteractive) wasNonInteractive = true;
         SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
         prefs.edit().putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
+                .putLong(BootIntro.KEY_LAST_STOP_WALL_TIME, System.currentTimeMillis())
                 .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, nonInteractive)
                 .putBoolean(BootIntro.KEY_DREAMING_PERSISTED, isDreaming)
                 .apply();
@@ -1855,6 +1991,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return false;
     }
 
+    public static boolean setWallpaper(String name) {
+        MainActivity act = activeInstance;
+        if (act != null && act.wallpaperPlayer != null) {
+            act.runOnUiThread(() -> act.wallpaperPlayer.showSpecific(name));
+            return true;
+        }
+        return false;
+    }
+
     public static String getCurrentWallpaperName() {
         MainActivity act = activeInstance;
         if (act != null && act.wallpaperPlayer != null) {
@@ -1868,6 +2013,96 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (act != null && act.wallpaperPlayer != null) {
             act.runOnUiThread(() -> act.wallpaperPlayer.onWallpaperDeleted(name));
         }
+    }
+
+    public static boolean playCustomIntro(Context ctx, String title, String subtitle, String anim, int holdMs) {
+        if (ctx == null) ctx = activeInstance;
+        if (ctx == null) return false;
+
+        customIntroPending = true;
+
+        PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+        boolean screenOff = pm != null && !pm.isInteractive();
+        boolean dreaming = BootIntro.isDreaming();
+        MainActivity act = activeInstance;
+        boolean stopped = act == null || act.stopped;
+
+        BridgeAdbManager adb = BridgeAdbManager.getInstance(ctx);
+        if (!adb.isConnected()) {
+            adb.connectSync(2000);
+        }
+        if (adb.isConnected()) {
+            if (screenOff) {
+                adb.executeShell("input keyevent 224");
+            }
+            if (dreaming || stopped) {
+                adb.executeShell("service call dreams 2");
+                adb.executeShell("input keyevent 3");
+            }
+        }
+
+        android.util.Log.i("MainActivity", "playCustomIntro: title='" + title + "', anim=" + anim
+                + ", holdMs=" + holdMs + ", act=" + (act != null) + ", stopped=" + stopped + ", dreaming=" + dreaming);
+
+        if (act != null && !act.isFinishing()) {
+            if (act.stopped || dreaming) {
+                Intent intent = new Intent(ctx, MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                intent.putExtra("custom_intro", true);
+                intent.putExtra("custom_title", title);
+                intent.putExtra("custom_subtitle", subtitle);
+                intent.putExtra("custom_anim", anim);
+                intent.putExtra("custom_hold", holdMs);
+                ctx.startActivity(intent);
+                return true;
+            } else {
+                act.runOnUiThread(() -> act.startCustomIntro(title, subtitle, anim, holdMs));
+                return true;
+            }
+        } else {
+            Intent intent = new Intent(ctx, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            intent.putExtra("custom_intro", true);
+            intent.putExtra("custom_title", title);
+            intent.putExtra("custom_subtitle", subtitle);
+            intent.putExtra("custom_anim", anim);
+            intent.putExtra("custom_hold", holdMs);
+            ctx.startActivity(intent);
+            return true;
+        }
+    }
+
+    private void startCustomIntro(String title, String subtitle, String anim, int holdMs) {
+        customIntroPending = false;
+        android.util.Log.i("MainActivity", "startCustomIntro executing: title='" + title + "', subtitle='" + subtitle + "', anim=" + anim + ", holdMs=" + holdMs);
+        if (bootIntroOverlay != null) {
+            bootIntroOverlay.skip();
+        }
+        View homeContent = findViewById(R.id.homeContent);
+        if (homeContent == null || grid == null || root == null) return;
+
+        BootIntro.notifyDreamEnded();
+        BootIntro.clearDreamState();
+        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        if (headerFocus != null) {
+            headerFocus.setSuppressed(true);
+        }
+
+        IntroSettings introSettings = IntroSettings.load(this, Config.load(this));
+        bootIntroOverlay = new BootIntroOverlay(this);
+        bootIntroOverlay.setIntroSettings(introSettings, title, subtitle, anim);
+        bootIntroOverlay.setIntroData(title, subtitle, anim, holdMs);
+
+        root.addView(bootIntroOverlay, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        introStartTime = SystemClock.elapsedRealtime();
+        userNavigatedDuringIntro = false;
+        bootIntroOverlay.start(homeContent, grid, () -> {
+            bootIntroOverlay = null;
+            BootIntro.clearDreamState();
+            focusFirstDockTile();
+        });
     }
 
     private boolean handleScreensaverKey(KeyEvent event) {

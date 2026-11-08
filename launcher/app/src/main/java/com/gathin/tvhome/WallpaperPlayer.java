@@ -169,6 +169,9 @@ final class WallpaperPlayer {
     }
 
     String getDisplayedName() {
+        if (pendingTargetName != null && !pendingTargetName.isEmpty()) {
+            return pendingTargetName;
+        }
         return displayed != null ? displayed : "";
     }
 
@@ -222,6 +225,31 @@ final class WallpaperPlayer {
                               : WallpaperRotation.previous(list, currentName);
         if (target == null) return;
 
+        displayTarget(target);
+    }
+
+    boolean showSpecific(String name) {
+        if (closed || name == null || name.isEmpty()) return false;
+        List<File> list = allWallpapers();
+        if (list.isEmpty()) return false;
+
+        files.clear();
+        files.addAll(list);
+
+        File target = null;
+        for (File f : list) {
+            if (f.getName().equals(name)) {
+                target = f;
+                break;
+            }
+        }
+        if (target == null) return false;
+
+        displayTarget(target);
+        return true;
+    }
+
+    private void displayTarget(File target) {
         pendingTargetName = target.getName();
         final String targetName = target.getName();
         final long reqId = ++changeRequestId;

@@ -83,6 +83,11 @@ final class BootIntroOverlay extends View {
     private int cy;
     private float titleY;
     private float subtitleY;
+    private float titleY1;
+    private float titleY2;
+    private String titleLine1 = "";
+    private String titleLine2 = "";
+    private boolean isTwoLineTitle = false;
 
     // For "letters" animation: precomputed positions and characters
     private boolean isLetters = false;
@@ -192,6 +197,7 @@ final class BootIntroOverlay extends View {
             this.title = title.trim();
         }
         this.subtitle = subtitle != null ? subtitle.trim() : "";
+        this.suppressMessages = false;
 
         if (animStyle == null || ANIM_RANDOM.equalsIgnoreCase(animStyle.trim())) {
             String[] styles = {ANIM_POP, ANIM_FADE, ANIM_SLIDE, ANIM_LETTERS, ANIM_SHIMMER};
@@ -254,41 +260,93 @@ final class BootIntroOverlay extends View {
             subtitleY = cy;
             isLetters = false;
             isShimmer = false;
+            isTwoLineTitle = false;
             return;
         }
 
-        // Auto-shrink title to fit exactly on one line without wrapping or clipping
-        float titleSize = 40f * density;
-        titlePaint.setTextSize(titleSize);
-        while (titlePaint.measureText(title) > maxTextWidth && titleSize > 18f * density) {
-            titleSize -= 1f * density;
-            titlePaint.setTextSize(titleSize);
-        }
-
-        // Auto-shrink subtitle if present
         boolean hasSubtitle = !subtitle.isEmpty();
-        if (hasSubtitle) {
-            float subSize = 19f * density;
-            subtitlePaint.setTextSize(subSize);
-            while (subtitlePaint.measureText(subtitle) > maxTextWidth && subSize > 12f * density) {
-                subSize -= 1f * density;
-                subtitlePaint.setTextSize(subSize);
+        isTwoLineTitle = false;
+        titleLine1 = "";
+        titleLine2 = "";
+
+        if (!hasSubtitle) {
+            float initialTitleSize = 38f * density;
+            titlePaint.setTextSize(initialTitleSize);
+            boolean isLong = title.length() >= 40 || titlePaint.measureText(title) > maxTextWidth;
+            if (isLong) {
+                String[] lines = splitTitleIntoTwoLines(title);
+                if (lines[1] != null && !lines[1].isEmpty()) {
+                    isTwoLineTitle = true;
+                    titleLine1 = lines[0];
+                    titleLine2 = lines[1];
+                }
             }
         }
 
-        Paint.FontMetrics tfm = titlePaint.getFontMetrics();
-        float titleCenterOffset = (tfm.ascent + tfm.descent) / 2f;
-        if (hasSubtitle) {
-            titleY = cy - titleCenterOffset - (16f * density);
-            Paint.FontMetrics sfm = subtitlePaint.getFontMetrics();
-            float subCenterOffset = (sfm.ascent + sfm.descent) / 2f;
-            subtitleY = cy - subCenterOffset + (26f * density);
+        if (isTwoLineTitle) {
+            float titleSize = 34f * density;
+            titlePaint.setTextSize(titleSize);
+            while ((titlePaint.measureText(titleLine1) > maxTextWidth || titlePaint.measureText(titleLine2) > maxTextWidth)
+                    && titleSize > 18f * density) {
+                titleSize -= 1f * density;
+                titlePaint.setTextSize(titleSize);
+            }
+            Paint.FontMetrics tfm = titlePaint.getFontMetrics();
+            float lineHeight = tfm.descent - tfm.ascent;
+            float lineSpacing = 10f * density;
+            float totalTextHeight = lineHeight * 2 + lineSpacing;
+            float topY = cy - (totalTextHeight / 2f) - tfm.ascent;
+            titleY1 = topY;
+            titleY2 = topY + lineHeight + lineSpacing;
+            titleY = cy;
         } else {
-            titleY = cy - titleCenterOffset;
+            // Auto-shrink title to fit exactly on one line without wrapping or clipping
+            float titleSize = 40f * density;
+            titlePaint.setTextSize(titleSize);
+            while (titlePaint.measureText(title) > maxTextWidth && titleSize > 18f * density) {
+                titleSize -= 1f * density;
+                titlePaint.setTextSize(titleSize);
+            }
+
+            // Auto-shrink subtitle if present
+            if (hasSubtitle) {
+                float subSize = 19f * density;
+                subtitlePaint.setTextSize(subSize);
+                while (subtitlePaint.measureText(subtitle) > maxTextWidth && subSize > 12f * density) {
+                    subSize -= 1f * density;
+                    subtitlePaint.setTextSize(subSize);
+                }
+            }
+
+            Paint.FontMetrics tfm = titlePaint.getFontMetrics();
+            float titleCenterOffset = (tfm.ascent + tfm.descent) / 2f;
+            if (hasSubtitle) {
+                titleY = cy - titleCenterOffset - (16f * density);
+                Paint.FontMetrics sfm = subtitlePaint.getFontMetrics();
+                float subCenterOffset = (sfm.ascent + sfm.descent) / 2f;
+                subtitleY = cy - subCenterOffset + (26f * density);
+            } else {
+                titleY = cy - titleCenterOffset;
+            }
+        }
+
+        // Check for surrogate pairs (emojis)
+        boolean hasSurrogates = false;
+        for (int i = 0; i < title.length(); i++) {
+            if (Character.isSurrogate(title.charAt(i))) {
+                hasSurrogates = true;
+                break;
+            }
         }
 
         // Setup specific animation precomputations
         isLetters = ANIM_LETTERS.equals(animStyle);
+        if (isLetters && (hasSurrogates || isTwoLineTitle)) {
+            // Fall back to ANIM_FADE for multi-line or surrogate-bearing text
+            this.animStyle = ANIM_FADE;
+            isLetters = false;
+        }
+
         if (isLetters) {
             titlePaint.setTextAlign(Paint.Align.LEFT);
             charArray = title.toCharArray();
@@ -309,7 +367,9 @@ final class BootIntroOverlay extends View {
 
         isShimmer = ANIM_SHIMMER.equals(animStyle);
         if (isShimmer) {
-            float totalW = titlePaint.measureText(title);
+            float totalW = isTwoLineTitle
+                    ? Math.max(titlePaint.measureText(titleLine1), titlePaint.measureText(titleLine2))
+                    : titlePaint.measureText(title);
             float sweepW = Math.max(120f * density, totalW * 0.45f);
             shimmerShader = new LinearGradient(
                     0, 0, sweepW, 0,
@@ -609,7 +669,11 @@ final class BootIntroOverlay extends View {
             float effectiveScale = titleScale * revealScale;
             canvas.scale(effectiveScale, effectiveScale, cx, cy);
 
-            if (isLetters && letterAnimProgress < 1.0f && !revealing) {
+            if (isTwoLineTitle) {
+                titlePaint.setAlpha((int) (titleAlpha * 255));
+                canvas.drawText(titleLine1, cx, titleY1 + titleTranslateY, titlePaint);
+                canvas.drawText(titleLine2, cx, titleY2 + titleTranslateY, titlePaint);
+            } else if (isLetters && letterAnimProgress < 1.0f && !revealing) {
                 int count = charArray.length;
                 float step = 0.5f / Math.max(1, count);
                 for (int i = 0; i < count; i++) {
@@ -644,5 +708,66 @@ final class BootIntroOverlay extends View {
             canvas.drawText(subtitle, cx, subtitleY + subtitleTranslateY, subtitlePaint);
             canvas.restore();
         }
+    }
+
+    /**
+     * Splits long single-sentence or multi-clause titles cleanly across two lines.
+     * Uses natural clause punctuation (!, ?, ., :, ,) or space closest to the middle.
+     */
+    static String[] splitTitleIntoTwoLines(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return new String[]{"", ""};
+        }
+        text = text.trim();
+        if (text.length() < 35) {
+            return new String[]{text, ""};
+        }
+
+        int mid = text.length() / 2;
+        int bestIdx = -1;
+        int bestDist = Integer.MAX_VALUE;
+
+        // Punctuation candidates in order of preference
+        String[] puncts = {"! ", "? ", ". ", ": ", ", "};
+        for (String p : puncts) {
+            int idx = text.indexOf(p);
+            while (idx != -1) {
+                int splitPoint = idx + 1; // include punctuation mark in line 1
+                if (splitPoint >= 10 && splitPoint <= text.length() - 10) {
+                    int dist = Math.abs(splitPoint - mid);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = splitPoint;
+                    }
+                }
+                idx = text.indexOf(p, idx + 1);
+            }
+            if (bestIdx != -1) break;
+        }
+
+        // If no punctuation split point found, split by space closest to mid
+        if (bestIdx == -1) {
+            int idx = text.indexOf(' ');
+            while (idx != -1) {
+                if (idx >= 10 && idx <= text.length() - 10) {
+                    int dist = Math.abs(idx - mid);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = idx;
+                    }
+                }
+                idx = text.indexOf(' ', idx + 1);
+            }
+        }
+
+        if (bestIdx != -1) {
+            String l1 = text.substring(0, bestIdx).trim();
+            String l2 = text.substring(bestIdx).trim();
+            if (!l1.isEmpty() && !l2.isEmpty()) {
+                return new String[]{l1, l2};
+            }
+        }
+
+        return new String[]{text, ""};
     }
 }

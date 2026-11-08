@@ -22,6 +22,8 @@ final class BootIntro {
     static final String KEY_SCREEN_OFF_PERSISTED = "screen_off_persisted";
     static final String KEY_APP_LAUNCHED = "app_launched_persisted";
     static final String KEY_LAST_STOP_TIME = "last_stop_time";
+    static final String KEY_LAST_STOP_WALL_TIME = "last_stop_wall_time";
+    static final String KEY_GREETING_HISTORY = "greeting_history_ids";
     static final String KEY_WAS_NON_INTERACTIVE = "was_non_interactive";
     static final String KEY_TEST_WAKE_GAP = "test_wake_gap";
 
@@ -35,17 +37,86 @@ final class BootIntro {
 
     private static volatile boolean dreamEnded = false;
     private static volatile boolean dreaming = false;
+    private static volatile long dreamStartRealtime = 0;
 
     private BootIntro() {}
 
     static void notifyDreamStarted() {
         dreaming = true;
         dreamEnded = false;
+        try {
+            dreamStartRealtime = android.os.SystemClock.elapsedRealtime();
+        } catch (Throwable ignored) {
+            dreamStartRealtime = System.currentTimeMillis();
+        }
     }
 
     static void notifyDreamEnded() {
         dreaming = false;
         dreamEnded = true;
+    }
+
+    static long getScreensaverDurationMinutes() {
+        if (dreamStartRealtime <= 0) return 0;
+        try {
+            long elapsed = android.os.SystemClock.elapsedRealtime() - dreamStartRealtime;
+            return elapsed > 0 ? (elapsed / 60_000L) : 0;
+        } catch (Throwable ignored) {
+            long elapsed = System.currentTimeMillis() - dreamStartRealtime;
+            return elapsed > 0 ? (elapsed / 60_000L) : 0;
+        }
+    }
+
+    static List<String> getGreetingHistory(android.content.Context ctx) {
+        if (ctx == null) return Collections.emptyList();
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE);
+        String raw = prefs.getString(KEY_GREETING_HISTORY, "");
+        if (raw == null || raw.trim().isEmpty()) return Collections.emptyList();
+        String[] parts = raw.split(",");
+        List<String> list = new ArrayList<>(parts.length);
+        for (String p : parts) {
+            String id = p.trim();
+            if (!id.isEmpty()) list.add(id);
+        }
+        return list;
+    }
+
+    static void recordGreetingId(android.content.Context ctx, String id) {
+        if (ctx == null || id == null || id.trim().isEmpty()) return;
+        List<String> history = new ArrayList<>(getGreetingHistory(ctx));
+        history.remove(id);
+        history.add(0, id);
+        if (history.size() > 30) {
+            history = history.subList(0, 30);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < history.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(history.get(i));
+        }
+        ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                .edit().putString(KEY_GREETING_HISTORY, sb.toString()).apply();
+    }
+
+    static String evaluateBootClass(android.content.Context ctx, java.time.LocalDateTime now) {
+        if (ctx == null || now == null) return "other";
+        int hour = now.getHour();
+        int minute = now.getMinute();
+        int totalMinutes = hour * 60 + minute;
+        // early_morning: 04:00 (240m) to 07:00 (420m)
+        // morning: 07:00 (420m) to 12:00 (720m)
+        boolean isMorningBucket = totalMinutes >= 240 && totalMinutes < 720;
+        if (!isMorningBucket) return "other";
+
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE);
+        long lastStopWallTime = prefs.getLong(KEY_LAST_STOP_WALL_TIME, 0);
+        long nowWall = System.currentTimeMillis();
+        // If unknown (0 or future) or gap >= 240 min (4 hours)
+        if (lastStopWallTime <= 0 || nowWall < lastStopWallTime) {
+            return "overnight_morning";
+        }
+        long diffMinutes = (nowWall - lastStopWallTime) / 60_000L;
+        return diffMinutes >= 240 ? "overnight_morning" : "other";
     }
 
     static boolean consumeDreamEnded() {
@@ -65,6 +136,7 @@ final class BootIntro {
     static void clearDreamState() {
         dreaming = false;
         dreamEnded = false;
+        dreamStartRealtime = 0;
     }
 
     static final class WakeDecision {

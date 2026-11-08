@@ -133,8 +133,12 @@ public class BridgeHttpServer extends NanoHTTPD {
                 return handleCycleWallpaper(false);
             } else if (Method.POST.equals(method) && "/wallpaper/cycle".equals(uri)) {
                 return handleCycleWallpaperPost(session);
+            } else if ((Method.POST.equals(method) || Method.GET.equals(method)) && "/wallpaper/set".equals(uri)) {
+                return handleSetWallpaper(session);
             } else if (Method.POST.equals(method) && "/screensaver".equals(uri)) {
                 return handleScreensaver();
+            } else if (Method.POST.equals(method) && "/intro".equals(uri)) {
+                return handleCustomIntro(session);
             } else if (Method.GET.equals(method) && "/wallpapers".equals(uri)) {
                 return handleGetWallpapers();
             } else if ((Method.DELETE.equals(method) && "/wallpaper".equals(uri)) ||
@@ -825,6 +829,54 @@ public class BridgeHttpServer extends NanoHTTPD {
         return jsonResponse(Response.Status.OK, resp.toString());
     }
 
+    private Response handleSetWallpaper(IHTTPSession session) {
+        Map<String, String> parms = session.getParms();
+        String name = null;
+        if (parms != null) {
+            name = parms.get("name");
+        }
+        if (name == null || name.trim().isEmpty()) {
+            String body = readBody(session);
+            if (body != null && !body.trim().isEmpty()) {
+                try {
+                    JSONObject obj = new JSONObject(body);
+                    name = obj.optString("name", null);
+                } catch (JSONException ignored) {}
+            }
+        }
+        if (name == null || name.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing wallpaper 'name'");
+        }
+
+        name = name.trim();
+        if (name.contains("..") || name.contains("/") || name.contains("\\") || name.contains("\0")) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Invalid wallpaper name");
+        }
+
+        File extDir = new File(context.getExternalFilesDir(null), "wallpapers");
+        File intDir = new File(context.getFilesDir(), "wallpapers");
+        File target = new File(extDir, name);
+        if (!target.exists()) {
+            target = new File(intDir, name);
+        }
+        if (!target.exists() || !target.isFile()) {
+            return errorResponse(Response.Status.NOT_FOUND, "Wallpaper not found: " + name);
+        }
+
+        boolean ok = MainActivity.setWallpaper(name);
+        if (!ok) {
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Failed to switch wallpaper or launcher inactive");
+        }
+
+        Log.i(TAG, "Selected wallpaper set: " + name);
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", "ok");
+            resp.put("current", name);
+        } catch (JSONException ignored) {}
+        return jsonResponse(Response.Status.OK, resp.toString());
+    }
+
     private Response handleGetWallpaperFile(IHTTPSession session, boolean isThumb) {
         Map<String, String> parms = session.getParms();
         String name = parms != null ? parms.get("name") : null;
@@ -934,6 +986,88 @@ public class BridgeHttpServer extends NanoHTTPD {
             obj.put("status", "ok");
         } catch (JSONException ignored) {}
         return newFixedLengthResponse(Response.Status.OK, "application/json", obj.toString());
+    }
+
+    private Response handleCustomIntro(IHTTPSession session) {
+        String body = readBody(session);
+        String title = null;
+        String subtitle = "";
+        String anim = "random";
+        int holdSeconds = 3;
+
+        if (body != null && !body.trim().isEmpty()) {
+            try {
+                JSONObject json = new JSONObject(body);
+                if (json.has("title") && !json.isNull("title")) {
+                    title = json.getString("title");
+                }
+                if (json.has("subtitle") && !json.isNull("subtitle")) {
+                    subtitle = json.getString("subtitle");
+                }
+                if (json.has("animation") && !json.isNull("animation")) {
+                    anim = json.getString("animation");
+                }
+                if (json.has("holdSeconds") && !json.isNull("holdSeconds")) {
+                    holdSeconds = json.optInt("holdSeconds", 3);
+                }
+            } catch (JSONException e) {
+                Log.w(TAG, "Failed to parse /intro JSON body", e);
+            }
+        }
+
+        // Fallback to query/POST parameters if body wasn't JSON
+        if (title == null && session.getParameters() != null) {
+            Map<String, List<String>> parms = session.getParameters();
+            List<String> tList = parms.get("title");
+            if (tList != null && !tList.isEmpty()) title = tList.get(0);
+            List<String> sList = parms.get("subtitle");
+            if (sList != null && !sList.isEmpty()) subtitle = sList.get(0);
+            List<String> aList = parms.get("animation");
+            if (aList != null && !aList.isEmpty()) anim = aList.get(0);
+            List<String> hList = parms.get("holdSeconds");
+            if (hList != null && !hList.isEmpty()) {
+                try {
+                    holdSeconds = Integer.parseInt(hList.get(0));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        if (title == null || title.trim().isEmpty()) {
+            return errorResponse(Response.Status.BAD_REQUEST, "Missing required 'title' field");
+        }
+
+        // Sanitization and Limits
+        title = title.replace("\0", "").replace("\r", "").replace("\b", "").trim();
+        subtitle = subtitle != null ? subtitle.replace("\0", "").replace("\r", "").replace("\b", "").trim() : "";
+
+        if (title.length() > 60) {
+            title = title.substring(0, 60);
+        }
+        if (subtitle.length() > 100) {
+            subtitle = subtitle.substring(0, 100);
+        }
+
+        if (holdSeconds < 1) holdSeconds = 1;
+        if (holdSeconds > 30) holdSeconds = 30;
+
+        String aLower = anim != null ? anim.trim().toLowerCase(Locale.ROOT) : "random";
+        if (!"pop".equals(aLower) && !"fade".equals(aLower) && !"slide".equals(aLower)
+                && !"letters".equals(aLower) && !"shimmer".equals(aLower) && !"random".equals(aLower)) {
+            aLower = "random";
+        }
+
+        boolean ok = MainActivity.playCustomIntro(context, title, subtitle, aLower, holdSeconds * 1000);
+        Log.i(TAG, "Custom intro triggered from " + session.getRemoteIpAddress() + ": title='" + title + "', anim=" + aLower + ", hold=" + holdSeconds + "s, result=" + ok);
+
+        JSONObject resp = new JSONObject();
+        try {
+            resp.put("status", ok ? "ok" : "queued");
+            resp.put("title", title);
+            resp.put("holdSeconds", holdSeconds);
+            resp.put("animation", aLower);
+        } catch (JSONException ignored) {}
+
+        return jsonResponse(Response.Status.OK, resp.toString());
     }
 
     private Response handleGetModes() {
