@@ -531,8 +531,15 @@ final class AppLibraryDialog {
         menu.setOutsideTouchable(true);
         menu.setAnimationStyle(0);
         menu.setElevation(0f);
+        QuickSettingsFocusIndicator focusIndicator = menuPanel.findViewById(R.id.focusIndicator);
+        if (focusIndicator != null) {
+            focusIndicator.setReducedMotion(reducedMotion);
+        }
         menu.setOnDismissListener(() -> {
             if (actionPopup == menu) actionPopup = null;
+            if (focusIndicator != null) {
+                focusIndicator.reset();
+            }
             restoreCardFocus();
         });
         addAction(rows, R.string.library_open, () -> open(app));
@@ -582,6 +589,13 @@ final class AppLibraryDialog {
         row.findViewById(R.id.icon).setVisibility(View.GONE);
         row.findViewById(R.id.dot).setVisibility(View.GONE);
         row.findViewById(R.id.status).setVisibility(View.GONE);
+        View parent = (View) rows.getParent();
+        QuickSettingsFocusIndicator focusIndicator = parent != null ? parent.findViewById(R.id.focusIndicator) : null;
+        row.setOnFocusChangeListener((v, focused) -> {
+            if (focused && focusIndicator != null) {
+                focusIndicator.onRowFocused(v);
+            }
+        });
         row.setOnClickListener(v -> action.run());
         rows.addView(row);
         row.setOnKeyListener((v, key, event) -> {

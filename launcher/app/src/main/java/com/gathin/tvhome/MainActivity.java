@@ -4455,6 +4455,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ((TextView) more.findViewById(R.id.title)).setText(R.string.more_inputs);
             more.findViewById(R.id.status).setVisibility(View.GONE);
             more.findViewById(R.id.dot).setVisibility(View.GONE);
+            View parent = (View) rows.getParent();
+            QuickSettingsFocusIndicator focusIndicator = parent != null ? parent.findViewById(R.id.focusIndicator) : null;
+            more.setOnFocusChangeListener((v, focused) -> {
+                if (focused && focusIndicator != null) {
+                    focusIndicator.onRowFocused(v);
+                }
+            });
             more.setOnClickListener(v -> {
                 for (View f : folded) f.setVisibility(View.VISIBLE);
                 rows.removeView(more);
@@ -4538,8 +4545,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         popup.setOutsideTouchable(true);
         popup.setAnimationStyle(0);
         popup.setElevation(0f);
+        QuickSettingsFocusIndicator focusIndicator = panel.findViewById(R.id.focusIndicator);
+        if (focusIndicator != null) {
+            focusIndicator.setReducedMotion(reducedMotion);
+        }
         popup.setOnDismissListener(() -> {
             if (openPopup == popup) openPopup = null;
+            if (focusIndicator != null) {
+                focusIndicator.reset();
+            }
         });
         openPopup = popup;
         return popup;
@@ -4584,6 +4598,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             status.setVisibility(View.GONE);
             dot.setVisibility(View.GONE);
         }
+        View parent = (View) rows.getParent();
+        QuickSettingsFocusIndicator focusIndicator = parent != null ? parent.findViewById(R.id.focusIndicator) : null;
+        row.setOnFocusChangeListener((v, focused) -> {
+            if (focused && focusIndicator != null) {
+                focusIndicator.onRowFocused(v);
+            }
+        });
         row.setOnClickListener(v -> {
             popup.dismiss();
             action.run();
@@ -4805,6 +4826,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         row.findViewById(R.id.dot).setVisibility(View.GONE);
         row.findViewById(R.id.status).setVisibility(View.GONE);
         ((TextView) row.findViewById(R.id.title)).setText(title);
+        View parent = (View) rows.getParent();
+        QuickSettingsFocusIndicator focusIndicator = parent != null ? parent.findViewById(R.id.focusIndicator) : null;
+        row.setOnFocusChangeListener((v, focused) -> {
+            if (focused && focusIndicator != null) {
+                focusIndicator.onRowFocused(v);
+            }
+        });
         row.setOnClickListener(v -> {
             popup.dismiss();
             action.run();

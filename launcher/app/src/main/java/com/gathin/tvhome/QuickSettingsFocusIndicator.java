@@ -41,13 +41,22 @@ public class QuickSettingsFocusIndicator extends View {
 
     private View currentFocusedRow;
     private boolean isVisible = false;
+    private boolean reducedMotion = false;
 
     // Organic fluid curve: rapid start, gentle cushion into target
     private static final Interpolator FLUID_INTERPOLATOR =
             new PathInterpolator(0.16f, 1.0f, 0.3f, 1.0f);
 
+    public QuickSettingsFocusIndicator(Context context) {
+        this(context, null);
+    }
+
     public QuickSettingsFocusIndicator(Context context, AttributeSet attrs) {
-        super(context, attrs);
+        this(context, attrs, 0);
+    }
+
+    public QuickSettingsFocusIndicator(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
         density = getResources().getDisplayMetrics().density;
         cornerRadius = 13f * density;
 
@@ -60,10 +69,17 @@ public class QuickSettingsFocusIndicator extends View {
         setWillNotDraw(false);
     }
 
+    public void setReducedMotion(boolean reduced) {
+        this.reducedMotion = reduced;
+    }
+
     public void reset() {
         if (moveAnimator != null) moveAnimator.cancel();
         if (fadeAnimator != null) fadeAnimator.cancel();
         if (textAnimator != null) textAnimator.cancel();
+        if (currentFocusedRow != null) {
+            applyColor(currentFocusedRow, 0xFFFFFFFF, 0x73FFFFFF);
+        }
         isVisible = false;
         currentFocusedRow = null;
         currentAlpha = 0f;
@@ -75,6 +91,7 @@ public class QuickSettingsFocusIndicator extends View {
         if (currentFocusedRow == row && isVisible) return;
 
         row.post(() -> {
+            if (!row.isAttachedToWindow() || !row.isFocused()) return;
             int[] rowLoc = new int[2];
             row.getLocationInWindow(rowLoc);
             int[] myLoc = new int[2];
@@ -85,7 +102,10 @@ public class QuickSettingsFocusIndicator extends View {
             float targetW = row.getWidth();
             float targetH = row.getHeight();
 
-            if (targetW <= 0 || targetH <= 0) return;
+            if (targetW <= 0 || targetH <= 0) {
+                row.post(() -> onRowFocused(row));
+                return;
+            }
 
             View oldRow = currentFocusedRow;
             currentFocusedRow = row;
@@ -121,7 +141,7 @@ public class QuickSettingsFocusIndicator extends View {
         final float fromH = currentH;
 
         moveAnimator = ValueAnimator.ofFloat(0f, 1f);
-        moveAnimator.setDuration(190);
+        moveAnimator.setDuration(reducedMotion ? 80 : 190);
         moveAnimator.setInterpolator(FLUID_INTERPOLATOR);
         moveAnimator.addUpdateListener(animation -> {
             float t = animation.getAnimatedFraction();
@@ -152,7 +172,7 @@ public class QuickSettingsFocusIndicator extends View {
         isVisible = true;
 
         fadeAnimator = ValueAnimator.ofFloat(currentAlpha, 1f);
-        fadeAnimator.setDuration(160);
+        fadeAnimator.setDuration(reducedMotion ? 80 : 160);
         fadeAnimator.setInterpolator(FLUID_INTERPOLATOR);
         fadeAnimator.addUpdateListener(a -> {
             currentAlpha = (float) a.getAnimatedValue();
@@ -168,32 +188,36 @@ public class QuickSettingsFocusIndicator extends View {
         final ArgbEvaluator evaluator = new ArgbEvaluator();
         final int darkColor = 0xFF111111;
         final int whiteColor = 0xFFFFFFFF;
+        final int darkDimColor = 0x99111111;
+        final int whiteDimColor = 0x73FFFFFF;
 
         textAnimator = ValueAnimator.ofFloat(0f, 1f);
-        textAnimator.setDuration(170);
+        textAnimator.setDuration(reducedMotion ? 100 : 170);
         textAnimator.setInterpolator(FLUID_INTERPOLATOR);
         textAnimator.addUpdateListener(anim -> {
             float t = anim.getAnimatedFraction();
             if (oldRow != null) {
                 int oldC = (Integer) evaluator.evaluate(t, darkColor, whiteColor);
-                applyColor(oldRow, oldC);
+                int oldDim = (Integer) evaluator.evaluate(t, darkDimColor, whiteDimColor);
+                applyColor(oldRow, oldC, oldDim);
             }
             if (newRow != null) {
                 int newC = (Integer) evaluator.evaluate(t, whiteColor, darkColor);
-                applyColor(newRow, newC);
+                int newDim = (Integer) evaluator.evaluate(t, whiteDimColor, darkDimColor);
+                applyColor(newRow, newC, newDim);
             }
         });
         textAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                if (oldRow != null) applyColor(oldRow, whiteColor);
-                if (newRow != null) applyColor(newRow, darkColor);
+                if (oldRow != null) applyColor(oldRow, whiteColor, whiteDimColor);
+                if (newRow != null) applyColor(newRow, darkColor, darkDimColor);
             }
         });
         textAnimator.start();
     }
 
-    private void applyColor(View row, int color) {
+    private void applyColor(View row, int color, int dimColor) {
         ColorStateList csl = ColorStateList.valueOf(color);
         TextView title = row.findViewById(R.id.title);
         if (title != null) {
@@ -202,6 +226,10 @@ public class QuickSettingsFocusIndicator extends View {
         ImageView icon = row.findViewById(R.id.icon);
         if (icon != null) {
             icon.setImageTintList(csl);
+        }
+        TextView status = row.findViewById(R.id.status);
+        if (status != null) {
+            status.setTextColor(ColorStateList.valueOf(dimColor));
         }
     }
 
