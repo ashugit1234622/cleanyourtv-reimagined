@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -10,8 +10,12 @@
 
     <com.gathin.tvhome.QuickSettingsFocusIndicator
         android:id="@+id/focusIndicator"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_alignStart="@id/rows"
+        android:layout_alignEnd="@id/rows"
+        android:layout_alignTop="@id/rows"
+        android:layout_alignBottom="@id/rows"
         android:clipChildren="false"
         android:focusable="false" />
 
@@ -22,4 +26,4 @@
         android:orientation="vertical"
         android:focusable="false"
         android:descendantFocusability="afterDescendants" />
-</FrameLayout>
+</RelativeLayout>

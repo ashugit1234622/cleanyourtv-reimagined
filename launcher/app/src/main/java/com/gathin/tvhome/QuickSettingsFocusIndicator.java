@@ -73,6 +73,13 @@ public class QuickSettingsFocusIndicator extends View {
         this.reducedMotion = reduced;
     }
 
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        int w = MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.EXACTLY ? MeasureSpec.getSize(widthMeasureSpec) : 0;
+        int h = MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY ? MeasureSpec.getSize(heightMeasureSpec) : 0;
+        setMeasuredDimension(w, h);
+    }
+
     public void reset() {
         if (moveAnimator != null) moveAnimator.cancel();
         if (fadeAnimator != null) fadeAnimator.cancel();
