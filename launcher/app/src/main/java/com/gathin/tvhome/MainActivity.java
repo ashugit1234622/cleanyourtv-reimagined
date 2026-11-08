@@ -4652,6 +4652,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return row;
     }
 
+    private View addInfoRow(LinearLayout rows, int iconRes, String title, String statusText) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        row.setFocusable(false);
+        row.setFocusableInTouchMode(false);
+        row.setClickable(false);
+        row.setBackground(null);
+        ImageView iconView = row.findViewById(R.id.icon);
+        iconView.setImageResource(iconRes);
+        iconView.setImageTintList(ColorStateList.valueOf(0xD9FFFFFF));
+        TextView titleView = row.findViewById(R.id.title);
+        titleView.setText(title);
+        titleView.setTextColor(0xD9FFFFFF);
+        row.findViewById(R.id.dot).setVisibility(View.GONE);
+        TextView status = row.findViewById(R.id.status);
+        if (statusText != null && !statusText.isEmpty()) {
+            status.setText(statusText);
+            status.setVisibility(View.VISIBLE);
+        } else {
+            status.setVisibility(View.GONE);
+        }
+        rows.addView(row);
+        return row;
+    }
+
     // ---- launcher settings and module cards -------------------------------------------------------
 
     /** top_menu: the gear's dropdown, standing in for the Inputs, Wi-Fi and Settings pills. */
@@ -4823,7 +4847,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             storageDetails.setText(String.format(Locale.ROOT, "%.1f GB Free", freeBytes / (1024f * 1024f * 1024f)));
         }
 
-        addInputRow(rows, popup, R.drawable.ic_boost, getString(R.string.system_boost), -1, () -> {
+        View boostRow = addInputRow(rows, popup, R.drawable.ic_boost, getString(R.string.system_boost), -1, () -> {
             long[] before = memUsedOfTotalMb();
             ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
             if (am != null) {
@@ -4847,29 +4871,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 });
             }, 500);
         });
+        boostRow.setId(View.generateViewId());
 
         if (deviceMonitor != null) {
             DeviceMonitor.RemoteStatus r = deviceMonitor.getRemoteStatus();
             if (r != null && r.isConnected) {
                 String rTitle = (!r.name.isEmpty() ? r.name : getString(R.string.remote_battery))
                         + (r.batteryPercent >= 0 ? " · " + r.batteryPercent + "%" : "");
-                addInputRow(rows, popup, R.drawable.ic_remote, rTitle, -1, () -> {
-                    Toast.makeText(this, rTitle, Toast.LENGTH_SHORT).show();
-                });
+                addInfoRow(rows, R.drawable.ic_remote, rTitle, null);
             }
 
             DeviceMonitor.AudioStatus a = deviceMonitor.getConnectedAudioStatus();
             if (a != null && a.isConnected) {
                 String aTitle = a.name + (a.batteryPercent >= 0 ? " · " + a.batteryPercent + "%" : "");
-                addInputRow(rows, popup, R.drawable.ic_headphones, aTitle, -1, () -> {
-                    Toast.makeText(this, aTitle, Toast.LENGTH_SHORT).show();
-                });
+                addInfoRow(rows, R.drawable.ic_headphones, aTitle, null);
             }
         }
 
-        addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1, () -> {
+        View bluetoothRow = addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1, () -> {
             open(SystemSettings.bluetoothSettingsIntent(this));
         });
+        bluetoothRow.setId(View.generateViewId());
+
+        boostRow.setNextFocusDownId(bluetoothRow.getId());
+        bluetoothRow.setNextFocusUpId(boostRow.getId());
 
         addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.native_settings), -1, () -> {
             Intent storage = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
