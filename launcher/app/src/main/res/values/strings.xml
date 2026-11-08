@@ -212,4 +212,9 @@
     <string name="phone_bridge_status_stopped">Phone Bridge is Stopped</string>
     <string name="phone_bridge_unpair_all">Unpair all devices</string>
     <string name="phone_bridge_clear_remembered">Clear remembered apps</string>
+
+    <!-- Performance & Hardware -->
+    <string name="system_boost">Memory &amp; Storage Boost</string>
+    <string name="remote_battery">Remote</string>
+    <string name="audio_accessory">Audio</string>
 </resources>

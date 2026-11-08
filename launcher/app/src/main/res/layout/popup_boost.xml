@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/panel"
+    android:layout_width="300dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/glass_panel"
+    android:padding="12dp"
+    android:elevation="12dp"
+    android:clipChildren="false">
+
+    <LinearLayout
+        android:id="@+id/headerBlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/boostTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="System Performance"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@string/font_medium" />
+
+            <TextView
+                android:id="@+id/boostStatusBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Active"
+                android:textColor="#A5D6A7"
+                android:textSize="11sp"
+                android:fontFamily="@string/font_medium"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:background="@drawable/chip_bg" />
+        </LinearLayout>
+
+        <!-- RAM Gauge -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="RAM Memory"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="@string/font_body" />
+
+            <TextView
+                android:id="@+id/ramDetailsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="@string/font_medium" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/ramProgressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="5dp"
+            android:progressDrawable="@drawable/progress_bar_custom"
+            android:max="100" />
+
+        <!-- Storage Gauge -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Internal Storage"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="@string/font_body" />
+
+            <TextView
+                android:id="@+id/storageDetailsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="@string/font_medium" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/storageProgressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="5dp"
+            android:progressDrawable="@drawable/progress_bar_custom"
+            android:max="100" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:background="#1FFFFFFF" />
+    </LinearLayout>
+
+    <com.gathin.tvhome.QuickSettingsFocusIndicator
+        android:id="@+id/focusIndicator"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_alignStart="@id/rows"
+        android:layout_alignEnd="@id/rows"
+        android:layout_alignTop="@id/rows"
+        android:layout_alignBottom="@id/rows"
+        android:clipChildren="false"
+        android:focusable="false" />
+
+    <LinearLayout
+        android:id="@+id/rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/headerBlock"
+        android:orientation="vertical"
+        android:focusable="false"
+        android:descendantFocusability="afterDescendants" />
+</RelativeLayout>

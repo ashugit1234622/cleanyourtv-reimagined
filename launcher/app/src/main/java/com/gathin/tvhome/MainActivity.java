@@ -3,6 +3,7 @@ package com.gathin.tvhome;
 import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -69,6 +70,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.PopupWindow;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -230,6 +232,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** vpn_pill: the VPN shown as its own pill (btnVpn) instead of a badge in the network pill. Off with top_menu. */
     private boolean vpnPill;
     private TextView btnVpn;
+    private TextView btnAudio;
+    private TextView btnRemote;
+    private DeviceMonitor deviceMonitor;
     /** The VpnBadge pill state btnVpn shows, so a refresh that changes nothing does not restyle it. */
     private int vpnPillState = VpnBadge.PILL_HIDDEN;
     /** icon_only_vpn: the VPN pill is a round lock button; off, it keeps the plain glass look saved here. */
@@ -892,6 +897,36 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         btnInputs = findViewById(R.id.btnInputs);
+        btnAudio = findViewById(R.id.btnAudio);
+        btnRemote = findViewById(R.id.btnRemote);
+        deviceMonitor = new DeviceMonitor(this);
+
+        if (btnAudio != null) {
+            btnAudio.setOnClickListener(v -> open(systemIntent(Settings.ACTION_BLUETOOTH_SETTINGS)));
+        }
+        if (btnRemote != null) {
+            btnRemote.setOnClickListener(v -> {
+                DeviceMonitor.RemoteStatus r = deviceMonitor != null ? deviceMonitor.getRemoteStatus() : null;
+                String msg = (r != null && !r.name.isEmpty() ? r.name : getString(R.string.remote_battery)) + " · "
+                        + (r != null && r.batteryPercent >= 0 ? r.batteryPercent + "%" : getString(R.string.connected));
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            });
+        }
+        if (stats != null) {
+            stats.setOnClickListener(v -> showBoostCard());
+            stats.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    btnInputs.requestFocus();
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                    return true;
+                }
+                return false;
+            });
+        }
+
         View btnSettings = findViewById(R.id.btnSettings);
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
@@ -983,11 +1018,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (!rtlMenuBar && v.getId() == leftButton && stats != null && stats.getVisibility() == View.VISIBLE) {
+                    stats.requestFocus();
+                    return true;
+                }
+                return v.getId() == leftButton;
+            }
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
+        if (btnAudio != null) btnAudio.setOnKeyListener(pillKeys);
+        if (btnRemote != null) btnRemote.setOnKeyListener(pillKeys);
         btnVpn.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
@@ -998,7 +1041,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             headerFocus.setReducedMotion(reducedMotion);
         }
 
-        List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings));
+        List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnAudio, btnRemote, btnVpn, btnReorder, btnLibraryTop, btnSettings));
         pills.addAll(topAppButtons);
         for (View button : pills) {
             button.setOnFocusChangeListener((view, focused) -> {
@@ -1663,6 +1706,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 handler.postDelayed(this::playPetalShower, 450);
             }
         }
+        if (deviceMonitor != null) {
+            deviceMonitor.start(this::updateDeviceAccessories);
+        }
     }
 
     /** Launcher settings' change count (Config.SETTINGS_REVISION_KEY); onResume rebuilds Home when it moved. */
@@ -1846,6 +1892,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cardPrompt != null) cardPrompt.dismiss();
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();
+        if (deviceMonitor != null) deviceMonitor.stop();
     }
 
     @Override
@@ -1920,6 +1967,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             cm.unregisterNetworkCallback(networkCallback);
             cm.unregisterNetworkCallback(vpnCallback);
         }
+        if (deviceMonitor != null) deviceMonitor.stop();
     }
 
     @Override
@@ -4666,6 +4714,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
         if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
         addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
+        addSettingsMenuRow(rows, popup, R.string.system_boost, this::showBoostCard);
         // A launcher may not restart the TV itself; the Home key helper can open the system power menu instead.
         if (HomeKeyService.canOpenPowerMenu()) addSettingsMenuRow(rows, popup, R.string.power_menu, HomeKeyService::openPowerMenu);
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -4674,6 +4723,106 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
                 ? Gravity.START : Gravity.END);
         rows.getChildAt(0).requestFocus();
+    }
+
+    private void updateDeviceAccessories() {
+        if (deviceMonitor == null) return;
+        DeviceMonitor.RemoteStatus remote = deviceMonitor.getRemoteStatus();
+        if (btnRemote != null) {
+            if (remote != null && remote.isConnected && remote.batteryPercent >= 0) {
+                btnRemote.setVisibility(View.VISIBLE);
+                btnRemote.setText(remote.batteryPercent + "%");
+                if (remote.batteryPercent <= 20) {
+                    btnRemote.setTextColor(0xFFFFB74D); // amber warning
+                } else {
+                    btnRemote.setTextColor(0xFFFFFFFF);
+                }
+            } else {
+                btnRemote.setVisibility(View.GONE);
+            }
+        }
+
+        DeviceMonitor.AudioStatus audio = deviceMonitor.getConnectedAudioStatus();
+        if (btnAudio != null) {
+            if (audio != null && audio.isConnected) {
+                btnAudio.setVisibility(View.VISIBLE);
+                String text = audio.name;
+                if (audio.batteryPercent >= 0) {
+                    text += " · " + audio.batteryPercent + "%";
+                }
+                btnAudio.setText(text);
+            } else {
+                btnAudio.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void showBoostCard() {
+        if (openPopup != null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_boost, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (300 * density));
+
+        ProgressBar ramProgress = panel.findViewById(R.id.ramProgressBar);
+        TextView ramDetails = panel.findViewById(R.id.ramDetailsText);
+        ProgressBar storageProgress = panel.findViewById(R.id.storageProgressBar);
+        TextView storageDetails = panel.findViewById(R.id.storageDetailsText);
+
+        long[] mem = memUsedOfTotalMb();
+        if (mem != null && mem[1] > 0) {
+            int ramPct = (int) Math.round((mem[0] * 100.0) / mem[1]);
+            ramProgress.setProgress(ramPct);
+            ramDetails.setText(String.format(Locale.ROOT, "%.1f / %.1f GB (%d%%)", mem[0] / 1024f, mem[1] / 1024f, ramPct));
+        }
+
+        File dataDir = Environment.getDataDirectory();
+        long totalBytes = dataDir.getTotalSpace();
+        long freeBytes = dataDir.getFreeSpace();
+        if (totalBytes > 0) {
+            long usedBytes = totalBytes - freeBytes;
+            int storagePct = (int) Math.round((usedBytes * 100.0) / totalBytes);
+            storageProgress.setProgress(storagePct);
+            storageDetails.setText(String.format(Locale.ROOT, "%.1f GB Free", freeBytes / (1024f * 1024f * 1024f)));
+        }
+
+        addInputRow(rows, popup, R.drawable.ic_boost, getString(R.string.system_boost), -1, () -> {
+            long[] before = memUsedOfTotalMb();
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null) {
+                for (ApplicationInfo app : getPackageManager().getInstalledApplications(0)) {
+                    if (!app.packageName.equals(getPackageName())) {
+                        try { am.killBackgroundProcesses(app.packageName); } catch (Exception ignored) {}
+                    }
+                }
+            }
+            System.gc();
+            long[] after = memUsedOfTotalMb();
+            long freed = (before != null && after != null) ? Math.max(0, before[0] - after[0]) : 0;
+            Toast.makeText(this, freed > 0 ? "⚡ Freed " + freed + " MB RAM!" : "⚡ RAM optimized!", Toast.LENGTH_SHORT).show();
+            handler.postDelayed(() -> {
+                if (statsBg != null) statsBg.post(() -> {
+                    String line = readStatsLine();
+                    handler.post(() -> { if (stats != null) stats.setText(line); });
+                });
+            }, 500);
+        });
+
+        addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.native_settings), -1, () -> {
+            Intent storage = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
+            if (storage.resolveActivity(getPackageManager()) == null) {
+                storage = new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS);
+            }
+            open(storage);
+        });
+
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (300 * density), panel.getMeasuredWidth()));
+
+        View anchor = stats != null && stats.getVisibility() == View.VISIBLE ? stats : findViewById(R.id.btnSettings);
+        dropIn(popup, panel, anchor, Gravity.START);
+        if (rows.getChildCount() > 0) {
+            rows.getChildAt(0).requestFocus();
+        }
     }
 
     /** A tile configured with launch_actions "input:<id>" (config.xml): switch to that TV input directly,
