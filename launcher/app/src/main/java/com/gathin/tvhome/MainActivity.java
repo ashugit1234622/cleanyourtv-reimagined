@@ -50,11 +50,15 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.Spannable;
 import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.ImageSpan;
+import androidx.core.content.ContextCompat;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -232,9 +236,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** vpn_pill: the VPN shown as its own pill (btnVpn) instead of a badge in the network pill. Off with top_menu. */
     private boolean vpnPill;
     private TextView btnVpn;
-    private TextView btnAudio;
-    private TextView btnRemote;
     private DeviceMonitor deviceMonitor;
+    private String lastSystemStats = "";
     /** The VpnBadge pill state btnVpn shows, so a refresh that changes nothing does not restyle it. */
     private int vpnPillState = VpnBadge.PILL_HIDDEN;
     /** icon_only_vpn: the VPN pill is a round lock button; off, it keeps the plain glass look saved here. */
@@ -897,21 +900,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         btnInputs = findViewById(R.id.btnInputs);
-        btnAudio = findViewById(R.id.btnAudio);
-        btnRemote = findViewById(R.id.btnRemote);
         deviceMonitor = new DeviceMonitor(this);
-
-        if (btnAudio != null) {
-            btnAudio.setOnClickListener(v -> open(systemIntent(Settings.ACTION_BLUETOOTH_SETTINGS)));
-        }
-        if (btnRemote != null) {
-            btnRemote.setOnClickListener(v -> {
-                DeviceMonitor.RemoteStatus r = deviceMonitor != null ? deviceMonitor.getRemoteStatus() : null;
-                String msg = (r != null && !r.name.isEmpty() ? r.name : getString(R.string.remote_battery)) + " · "
-                        + (r != null && r.batteryPercent >= 0 ? r.batteryPercent + "%" : getString(R.string.connected));
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-            });
-        }
         if (stats != null) {
             stats.setOnClickListener(v -> showBoostCard());
             stats.setOnKeyListener((v, keyCode, event) -> {
@@ -1029,8 +1018,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
-        if (btnAudio != null) btnAudio.setOnKeyListener(pillKeys);
-        if (btnRemote != null) btnRemote.setOnKeyListener(pillKeys);
         btnVpn.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
@@ -1041,7 +1028,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             headerFocus.setReducedMotion(reducedMotion);
         }
 
-        List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnAudio, btnRemote, btnVpn, btnReorder, btnLibraryTop, btnSettings));
+        List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings));
         pills.addAll(topAppButtons);
         for (View button : pills) {
             button.setOnFocusChangeListener((view, focused) -> {
@@ -1709,6 +1696,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (deviceMonitor != null) {
             deviceMonitor.start(this::updateDeviceAccessories);
         }
+        updateStatsView();
     }
 
     /** Launcher settings' change count (Config.SETTINGS_REVISION_KEY); onResume rebuilds Home when it moved. */
@@ -3095,7 +3083,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (statsBg != bg) return;
                 String line = readStatsLine();
                 handler.post(() -> {
-                    if (showStats && stats != null && statsBg == bg) stats.setText(line);
+                    if (showStats && stats != null && statsBg == bg) {
+                        lastSystemStats = line;
+                        updateStatsView();
+                    }
                 });
                 if (statsBg == bg) bg.postDelayed(this, STATS_MS);
             }
@@ -4726,34 +4717,81 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void updateDeviceAccessories() {
-        if (deviceMonitor == null) return;
-        DeviceMonitor.RemoteStatus remote = deviceMonitor.getRemoteStatus();
-        if (btnRemote != null) {
-            if (remote != null && remote.isConnected && remote.batteryPercent >= 0) {
-                btnRemote.setVisibility(View.VISIBLE);
-                btnRemote.setText(remote.batteryPercent + "%");
-                if (remote.batteryPercent <= 20) {
-                    btnRemote.setTextColor(0xFFFFB74D); // amber warning
+        handler.post(this::updateStatsView);
+    }
+
+    private void updateStatsView() {
+        if (!showStats || stats == null) return;
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (lastSystemStats != null && !lastSystemStats.isEmpty()) {
+            sb.append(lastSystemStats);
+        }
+
+        DeviceMonitor.RemoteStatus remote = deviceMonitor != null ? deviceMonitor.getRemoteStatus() : null;
+        DeviceMonitor.AudioStatus audio = deviceMonitor != null ? deviceMonitor.getConnectedAudioStatus() : null;
+
+        boolean hasRemote = remote != null && remote.isConnected && remote.batteryPercent >= 0;
+        boolean hasAudio = audio != null && audio.isConnected;
+
+        if (hasRemote || hasAudio) {
+            if (sb.length() > 0) {
+                int divStart = sb.length();
+                sb.append("   │   ");
+                sb.setSpan(new ForegroundColorSpan(0x59FFFFFF), divStart, sb.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            if (hasRemote) {
+                Drawable remoteIcon = ContextCompat.getDrawable(this, R.drawable.ic_remote);
+                if (remoteIcon != null) {
+                    remoteIcon = remoteIcon.mutate();
+                    int iconSize = (int) (13 * density);
+                    remoteIcon.setBounds(0, 0, iconSize, iconSize);
+                    int tint = remote.batteryPercent <= 20 ? 0xFFFFB74D : 0xD9FFFFFF;
+                    remoteIcon.setTint(tint);
+                    int iconPos = sb.length();
+                    sb.append(" ");
+                    int align = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ImageSpan.ALIGN_CENTER : ImageSpan.ALIGN_BOTTOM;
+                    sb.setSpan(new ImageSpan(remoteIcon, align), iconPos, iconPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    int textPos = sb.length();
+                    sb.append(" ").append(String.valueOf(remote.batteryPercent)).append("%");
+                    if (remote.batteryPercent <= 20) {
+                        sb.setSpan(new ForegroundColorSpan(0xFFFFB74D), textPos, sb.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
                 } else {
-                    btnRemote.setTextColor(0xFFFFFFFF);
+                    sb.append(String.valueOf(remote.batteryPercent)).append("%");
                 }
-            } else {
-                btnRemote.setVisibility(View.GONE);
+            }
+
+            if (hasAudio) {
+                if (hasRemote) {
+                    sb.append("   ·   ");
+                }
+                Drawable audioIcon = ContextCompat.getDrawable(this, R.drawable.ic_headphones);
+                if (audioIcon != null) {
+                    audioIcon = audioIcon.mutate();
+                    int iconSize = (int) (13 * density);
+                    audioIcon.setBounds(0, 0, iconSize, iconSize);
+                    int tint = (audio.batteryPercent >= 0 && audio.batteryPercent <= 20) ? 0xFFFFB74D : 0xD9FFFFFF;
+                    audioIcon.setTint(tint);
+                    int iconPos = sb.length();
+                    sb.append(" ");
+                    int align = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ImageSpan.ALIGN_CENTER : ImageSpan.ALIGN_BOTTOM;
+                    sb.setSpan(new ImageSpan(audioIcon, align), iconPos, iconPos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    int textPos = sb.length();
+                    String aStr = audio.batteryPercent >= 0 ? " " + audio.batteryPercent + "%" : " " + audio.name;
+                    sb.append(aStr);
+                    if (audio.batteryPercent >= 0 && audio.batteryPercent <= 20) {
+                        sb.setSpan(new ForegroundColorSpan(0xFFFFB74D), textPos, sb.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                } else {
+                    sb.append(audio.name);
+                }
             }
         }
 
-        DeviceMonitor.AudioStatus audio = deviceMonitor.getConnectedAudioStatus();
-        if (btnAudio != null) {
-            if (audio != null && audio.isConnected) {
-                btnAudio.setVisibility(View.VISIBLE);
-                String text = audio.name;
-                if (audio.batteryPercent >= 0) {
-                    text += " · " + audio.batteryPercent + "%";
-                }
-                btnAudio.setText(text);
-            } else {
-                btnAudio.setVisibility(View.GONE);
-            }
+        if (sb.length() > 0) {
+            stats.setText(sb, TextView.BufferType.SPANNABLE);
+            stats.setVisibility(View.VISIBLE);
         }
     }
 
@@ -4802,9 +4840,35 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             handler.postDelayed(() -> {
                 if (statsBg != null) statsBg.post(() -> {
                     String line = readStatsLine();
-                    handler.post(() -> { if (stats != null) stats.setText(line); });
+                    handler.post(() -> {
+                        lastSystemStats = line;
+                        updateStatsView();
+                    });
                 });
             }, 500);
+        });
+
+        if (deviceMonitor != null) {
+            DeviceMonitor.RemoteStatus r = deviceMonitor.getRemoteStatus();
+            if (r != null && r.isConnected) {
+                String rTitle = (!r.name.isEmpty() ? r.name : getString(R.string.remote_battery))
+                        + (r.batteryPercent >= 0 ? " · " + r.batteryPercent + "%" : "");
+                addInputRow(rows, popup, R.drawable.ic_remote, rTitle, -1, () -> {
+                    Toast.makeText(this, rTitle, Toast.LENGTH_SHORT).show();
+                });
+            }
+
+            DeviceMonitor.AudioStatus a = deviceMonitor.getConnectedAudioStatus();
+            if (a != null && a.isConnected) {
+                String aTitle = a.name + (a.batteryPercent >= 0 ? " · " + a.batteryPercent + "%" : "");
+                addInputRow(rows, popup, R.drawable.ic_headphones, aTitle, -1, () -> {
+                    Toast.makeText(this, aTitle, Toast.LENGTH_SHORT).show();
+                });
+            }
+        }
+
+        addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1, () -> {
+            open(SystemSettings.bluetoothSettingsIntent(this));
         });
 
         addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.native_settings), -1, () -> {
