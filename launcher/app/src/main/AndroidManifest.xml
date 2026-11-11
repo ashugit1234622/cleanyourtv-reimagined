@@ -169,7 +169,7 @@
             android:launchMode="singleTop"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
+            android:theme="@style/Theme.TvHome.QuickSettings">
             <intent-filter>
                 <action android:name="com.gathin.tvhome.action.QUICK_SETTINGS" />
                 <category android:name="android.intent.category.DEFAULT" />

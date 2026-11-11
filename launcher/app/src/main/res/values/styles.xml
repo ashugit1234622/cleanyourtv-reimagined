@@ -6,6 +6,11 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <!-- Translucent quick panel over Home or another app: no system window transition. -->
+    <style name="Theme.TvHome.QuickSettings" parent="android:Theme.Translucent.NoTitleBar.Fullscreen">
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
     <!-- Frosted pill, tvOS style. -->
     <style name="TopButtonBase">
         <item name="android:layout_width">wrap_content</item>

@@ -165,13 +165,17 @@ public final class QuickSettingsActivity extends Activity {
         finish();
     }
 
+    @Override
+    public void finish() {
+        super.finish();
+        LauncherMotion.clearWindowTransition(this);
+    }
+
     /** Anything else taking the screen (Home, an app, a screensaver) closes the panel. */
     @Override
-    @SuppressWarnings("deprecation")
     protected void onPause() {
         super.onPause();
         finish();
-        overridePendingTransition(0, 0);
     }
 
     private void addRow(LinearLayout rows, int icon, CharSequence title, Intent target) {

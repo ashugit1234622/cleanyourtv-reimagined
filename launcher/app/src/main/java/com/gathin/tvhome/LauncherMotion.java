@@ -198,6 +198,31 @@ public final class LauncherMotion {
         applySubScreenCloseTransition(activity, cfg.animations, cfg.reducedMotion);
     }
 
+    /** Suppresses Android's default window transition for translucent overlays such as Quick Settings. */
+    @SuppressWarnings("deprecation")
+    public static void clearWindowTransition(Activity activity) {
+        if (activity != null) {
+            activity.overridePendingTransition(0, 0);
+        }
+    }
+
+    /**
+     * Runs Home's return-to-rest depth settle only when Home had actually stopped behind an opaque
+     * screen, so closing a translucent overlay (such as Quick Settings) leaves Home still.
+     */
+    public static boolean shouldPlayReturnSettle(boolean stoppedBeforeResume, boolean rebuildingTiles,
+                                                 boolean animations, boolean reducedMotion,
+                                                 boolean introPlaying, boolean popupOpen,
+                                                 boolean showcaseEngaged) {
+        return stoppedBeforeResume
+                && !rebuildingTiles
+                && animations
+                && !reducedMotion
+                && !introPlaying
+                && !popupOpen
+                && !showcaseEngaged;
+    }
+
     /** Tactile inward press dip when OK/Enter goes down on a tile card. */
     public static void pressDip(View view, float baseScale, boolean animations, boolean reducedMotion) {
         if (!animations || reducedMotion || view == null) return;

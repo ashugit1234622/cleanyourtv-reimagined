@@ -3,6 +3,7 @@ package com.gathin.tvhome;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class LauncherMotionTest {
@@ -104,6 +105,21 @@ public class LauncherMotionTest {
         assertTrue(midAlpha > 0f && midAlpha < 1f);
         assertEquals(0f, LauncherMotion.curtainArtAlphaAt(0.75f), 0.0001f);
         assertEquals(0f, LauncherMotion.curtainArtAlphaAt(1f), 0.0001f);
+    }
+
+    @Test
+    public void returnSettleSkipsTranslucentOverlayPauseWithoutStop() {
+        // Translucent overlays (e.g. Quick Settings) pause Home without stopping it: must not jitter.
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(false, false, true, false, false, false, false));
+        // Full-screen screen exit (after onStop) plays return settle when eligible.
+        assertTrue(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, false, false, false));
+        // Suppressors block return settle even after onStop.
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, true, true, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, true, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, true, false, false));
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, false, true, false));
+        assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, false, false, true));
     }
 }
 

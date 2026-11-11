@@ -203,7 +203,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int lastHeroPosition = -1;
     private float pendingHeroRestY = Float.NaN;
     private HeaderFocusIndicator headerFocus;
-    private boolean pausedBefore;
+    private boolean stoppedBefore;
     private View launchCurtain;
     private ImageView launchCurtainArt;
     private View homeContent;
@@ -1734,8 +1734,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
-        boolean returningToHome = pausedBefore;
-        pausedBefore = false;
+        boolean returningFromStop = stoppedBefore;
+        stoppedBefore = false;
         onResumeLaunchCleanup();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
@@ -1826,11 +1826,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             deviceMonitor.start(this::updateDeviceAccessories);
         }
         updateStatsView();
-        if (returningToHome && refreshAction != TileRefresh.Action.REBUILD
-                && animations && !reducedMotion
-                && (bootIntroOverlay == null || !bootIntroOverlay.isPlaying())
-                && !deferReloadAppsUntilReveal && openPopup == null
-                && (idleShowcase == null || !idleShowcase.isEngaged())) {
+        if (LauncherMotion.shouldPlayReturnSettle(
+                returningFromStop,
+                refreshAction == TileRefresh.Action.REBUILD || deferReloadAppsUntilReveal,
+                animations,
+                reducedMotion,
+                bootIntroOverlay != null && bootIntroOverlay.isPlaying(),
+                openPopup != null,
+                idleShowcase != null && idleShowcase.isEngaged())) {
             playReturnToHomeSettle();
         }
     }
@@ -2066,7 +2069,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
-        pausedBefore = true;
         onPauseLaunchCleanup();
         cancelReturnSettle();
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
@@ -2115,6 +2117,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         clockRefresh.stop();
         handler.removeCallbacks(clockCheck);
         stopped = true;
+        stoppedBefore = true;
         clearLaunchCurtainImmediate();
         tileRefresh.onStop();
     }
@@ -5047,6 +5050,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             setAppLaunched(true);
             try {
                 startActivity(i);
+                LauncherMotion.clearWindowTransition(this);
             } catch (ActivityNotFoundException | SecurityException e) {
                 Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
             }
