@@ -63,6 +63,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void onLibraryUp();
         /** A tile whose launch_actions entry is "input:<id>": switch to that TV input instead of opening an app. */
         void onOpenInput(String inputId);
+
+        /** Overload carrying the clicked card view so Activity-backed TV inputs can expand from the tile. */
+        default void onOpenInput(String inputId, View sourceCard) {
+            onOpenInput(inputId);
+        }
         /**
          * Runs the local black-curtain expand animation from {@code card} and invokes {@code commit}
          * once fullscreen black is reached (or immediately when reduced motion / no animations).
@@ -545,11 +550,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 if (pos != RecyclerView.NO_POSITION) listener.onTileLongPress(pos, v);
                 return true;
             }
-            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                ctx.startActivity(i);
-            } catch (ActivityNotFoundException ignored) {
+            Intent info = SystemSettings.appInfo(ctx, e.pkg);
+            if (info != null) {
+                dispatchLaunch(v, info.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), false, null, e.label);
             }
             return true;
         });
@@ -572,7 +575,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         String action = launchActions.get(e.pkg);
         String inputId = LaunchActions.inputId(action);
         if (inputId != null) {
-            listener.onOpenInput(inputId);
+            listener.onOpenInput(inputId, sourceCard);
             return;
         }
         if (action != null) {

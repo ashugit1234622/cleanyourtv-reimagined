@@ -575,12 +575,21 @@ final class AppLibraryDialog {
         addAction(rows, home ? R.string.library_remove_shortcut : R.string.library_add_home,
                 () -> changeHome(app, !home));
         Intent info = SystemSettings.appInfo(activity, pkg);
-        if (info != null) addAction(rows, R.string.library_app_info, () -> {
+        if (info != null) addActionRow(rows, R.string.library_app_info, v -> {
+            float[] bounds = LauncherMotion.captureScreenBounds(v);
             close();
+            Runnable onCantOpen = () -> Toast.makeText(
+                    activity, activity.getString(R.string.cant_open, label(app)), Toast.LENGTH_SHORT).show();
+            if (activity instanceof MainActivity && bounds != null) {
+                ((MainActivity) activity).launchIntentFromScreenBounds(
+                        bounds[0], bounds[1], bounds[2], bounds[3], info, onCantOpen);
+                return;
+            }
             try {
                 activity.startActivity(info);
+                LauncherMotion.applySubScreenOpenTransition(activity, animations, reducedMotion);
             } catch (ActivityNotFoundException | SecurityException e) {
-                Toast.makeText(activity, activity.getString(R.string.cant_open, label(app)), Toast.LENGTH_SHORT).show();
+                onCantOpen.run();
             }
         });
         int menuWidth = dp(220);
@@ -612,6 +621,10 @@ final class AppLibraryDialog {
     }
 
     private void addAction(LinearLayout rows, int label, Runnable action) {
+        addActionRow(rows, label, v -> action.run());
+    }
+
+    private void addActionRow(LinearLayout rows, int label, View.OnClickListener action) {
         View row = activity.getLayoutInflater().inflate(R.layout.item_input, rows, false);
         ((TextView) row.findViewById(R.id.title)).setText(label);
         row.setFocusableInTouchMode(true);
@@ -625,7 +638,7 @@ final class AppLibraryDialog {
                 focusIndicator.onRowFocused(v);
             }
         });
-        row.setOnClickListener(v -> action.run());
+        row.setOnClickListener(action);
         rows.addView(row);
         row.setOnKeyListener((v, key, event) -> {
             int index = rows.indexOfChild(v);

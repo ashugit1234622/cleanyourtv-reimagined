@@ -204,12 +204,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float pendingHeroRestY = Float.NaN;
     private HeaderFocusIndicator headerFocus;
     private boolean stoppedBefore;
-    private View launchCurtain;
-    private ImageView launchCurtainArt;
+    private interface RowAction {
+        void run(float[] screenBounds);
+    }
+
+    private LaunchCurtainController curtainController;
     private View homeContent;
-    private Bitmap launchCurtainBitmap;
-    private ValueAnimator launchCurtainAnimator;
-    private float launchCurtainCornerPx;
     private float preLaunchHeroAlpha = 1f;
     private float preLaunchRaceAlpha = 1f;
     private float preLaunchGlassAlpha = 0f;
@@ -218,13 +218,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private View launchingCard;
     private boolean launchDimApplied;
     private boolean glassScaledForLaunch;
-    private boolean launchCurtainPending;
-    private boolean launchCurtainCommitted;
-    private boolean launchCurtainLostFocus;
-    private int launchCurtainGen;
     private AppLaunchSettings appLaunchSettings = AppLaunchSettings.defaults();
-    private static final long DEAD_LAUNCH_TIMEOUT_MS = 6000L;
-    private final Runnable clearLaunchPulse = this::settleLaunchPulseIfResumed;
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
@@ -408,7 +402,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             handler.removeCallbacks(this);   // the deadline's run, when the network came first
             Intent i = startPending;
             startPending = null;
-            open(i);
+            openDirect(i);
         }
     };
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
@@ -632,27 +626,54 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
         homeContent = findViewById(R.id.homeContent);
-        launchCurtain = findViewById(R.id.launchCurtain);
-        launchCurtainArt = findViewById(R.id.launchCurtainArt);
-        if (launchCurtainArt != null) {
-            launchCurtainArt.forceHasOverlappingRendering(false);
-        }
-        if (launchCurtain != null) {
-            launchCurtain.setOutlineProvider(new ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, Outline outline) {
-                    int w = view.getWidth();
-                    int h = view.getHeight();
-                    if (w <= 0 || h <= 0) return;
-                    if (launchCurtainCornerPx < 0.5f) {
-                        outline.setRect(0, 0, w, h);
-                    } else {
-                        outline.setRoundRect(0, 0, w, h, launchCurtainCornerPx);
+        curtainController = new LaunchCurtainController(
+                this,
+                handler,
+                root,
+                findViewById(R.id.launchCurtain),
+                findViewById(R.id.launchCurtainArt),
+                new LaunchCurtainController.Host() {
+                    @Override
+                    public boolean animationsEnabled() {
+                        return animations;
                     }
-                }
-            });
-            launchCurtain.setClipToOutline(true);
-        }
+
+                    @Override
+                    public boolean reducedMotionEnabled() {
+                        return reducedMotion;
+                    }
+
+                    @Override
+                    public boolean isResumed() {
+                        return resumed;
+                    }
+
+                    @Override
+                    public boolean hasWindowFocus() {
+                        return MainActivity.this.hasWindowFocus();
+                    }
+
+                    @Override
+                    public void onBeforeCurtainExpand(View sourceView, int rootW, int rootH, AppLaunchSettings cfg) {
+                        appLaunchSettings = cfg;
+                        prepareHomeForLaunchDepth(sourceView, rootW, rootH, cfg);
+                    }
+
+                    @Override
+                    public void onCurtainDepthProgress(float easedProgress, AppLaunchSettings cfg) {
+                        applyHomeDepthProgress(easedProgress, cfg);
+                    }
+
+                    @Override
+                    public void onRestoreBackground() {
+                        resetLaunchTilesAndDim();
+                    }
+
+                    @Override
+                    public View fallbackAnchorView() {
+                        return findViewById(R.id.btnSettings);
+                    }
+                });
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
@@ -984,14 +1005,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
         btnWifi.setOnClickListener(v -> {
             if (headerFocus != null) headerFocus.pulsePress();
-            openNetworkPill();
+            openNetworkPill(v);
         });
         btnVpn.setOnClickListener(v -> {
             if (headerFocus != null) headerFocus.pulsePress();
-            openVpnPill();
+            openVpnPill(v);
         });
         btnWifi.setOnLongClickListener(v -> {
-            open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
+            open(systemIntent(Settings.ACTION_WIFI_SETTINGS), v);
             return true;
         });
         launcherSettingsButton = cfg.launcherSettingsButton;
@@ -1001,8 +1022,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         btnSettings.setOnClickListener(v -> {
             if (headerFocus != null) headerFocus.pulsePress();
-            if (launcherSettingsButton) openLauncherSettings();
-            else open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class) : SystemSettings.quickSettingsIntent(this));
+            if (launcherSettingsButton) openLauncherSettings(v);
+            else open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class) : SystemSettings.quickSettingsIntent(this), v);
         });
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> {
@@ -1640,14 +1661,61 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void openLauncherSettings() {
-        startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-        LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+        openLauncherSettings((View) null);
+    }
+
+    private void openLauncherSettings(View sourceView) {
+        Runnable onFail = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        AppAdapter.LaunchCommit commit = curtainApplied -> startLauncherSettingsForResult(curtainApplied, onFail);
+        if (curtainController != null) {
+            curtainController.launch(sourceView, null, true, commit);
+        } else {
+            commit.run(false);
+        }
+    }
+
+    private void openLauncherSettingsFromScreenBounds(float[] screenBounds) {
+        Runnable onFail = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        AppAdapter.LaunchCommit commit = curtainApplied -> startLauncherSettingsForResult(curtainApplied, onFail);
+        if (curtainController != null) {
+            curtainController.launchFromScreenBounds(screenBounds, true, commit);
+        } else {
+            commit.run(false);
+        }
+    }
+
+    private boolean startLauncherSettingsForResult(boolean curtainApplied, Runnable onFail) {
+        try {
+            startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
+            if (curtainApplied) {
+                AppLaunchSettings settings = curtainController != null
+                        ? curtainController.lastSettings() : AppLaunchSettings.load(this);
+                LauncherMotion.applyCurtainOpenTransition(this, animations, reducedMotion, settings);
+            } else {
+                LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+            }
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            if (onFail != null) onFail.run();
+            return false;
+        }
     }
 
     private boolean openLauncherSettingsIfAsked(Intent intent) {
         if (intent == null || !ACTION_LAUNCHER_SETTINGS.equals(intent.getAction())) return false;
+        boolean skipCurtain = intent.getBooleanExtra(LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, false);
         setIntent(new Intent(Intent.ACTION_MAIN));
-        openLauncherSettings();
+        if (skipCurtain) {
+            AppLaunchSettings launchCfg = AppLaunchSettings.load(this);
+            appLaunchSettings = launchCfg;
+            if (curtainController != null) {
+                curtainController.holdForHandoff(launchCfg);
+            }
+            boolean applied = animations && !reducedMotion && launchCfg.enabled;
+            startLauncherSettingsForResult(applied, null);
+        } else {
+            openLauncherSettings();
+        }
         return true;
     }
 
@@ -1697,7 +1765,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLibraryIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
-        if (launchCurtainPending || launchCurtainCommitted) {
+        if (curtainController != null && curtainController.isBusy()) {
             onResumeLaunchCleanup();
         }
         if (gameDay != null && !stopped) gameDay.read();
@@ -2118,7 +2186,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         handler.removeCallbacks(clockCheck);
         stopped = true;
         stoppedBefore = true;
-        clearLaunchCurtainImmediate();
+        if (curtainController != null) curtainController.onStop();
         tileRefresh.onStop();
     }
 
@@ -2148,19 +2216,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (curtainController != null) curtainController.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            if (resumed && launchCurtainLostFocus && (launchCurtainPending || launchCurtainCommitted)) {
-                resetLaunchTilesAndDim();
-                fadeOutLaunchCurtainForResume();
-            }
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
         } else {
-            handler.removeCallbacks(clearLaunchPulse);
-            if (launchCurtainCommitted) {
-                launchCurtainLostFocus = true;
-            }
             cancelHoldOk();   // a dialog or another window took the remote while OK was held
         }
     }
@@ -2477,20 +2538,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (idleShowcase != null && idleShowcase.handleDispatchKeyEvent(event)) {
             return true;
         }
-        if (launchCurtainPending || launchCurtainCommitted) {
-            int code = event.getKeyCode();
-            if (code == KeyEvent.KEYCODE_BACK) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                    resetLaunchTilesAndDim();
-                    fadeOutLaunchCurtainForResume();
-                }
-                return true;
-            }
-            if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
-                    || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
-                    || isOkKey(code)) {
-                return true;
-            }
+        if (curtainController != null
+                && curtainController.handleDispatchKeyEvent(event, isOkKey(event.getKeyCode()))) {
+            return true;
         }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
@@ -2909,7 +2959,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             commit.run(false);
             return;
         }
-        launchWithCurtain(card, null, commit);
+        launchWithCurtain(card, null, false, commit);
     }
 
     /** Launches an app from screen-space card bounds (used when closing overlay dialogs like All Apps). */
@@ -2917,19 +2967,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                                       Intent intent, Runnable onCantOpen) {
         AppAdapter.LaunchCommit commit = curtainApplied ->
                 startIntentWithTransition(intent, curtainApplied, false, onCantOpen);
-        if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) {
+        if (curtainController == null) {
             commit.run(false);
             return;
         }
-        int[] rootLoc = new int[2];
-        root.getLocationOnScreen(rootLoc);
-        float[] relBounds = new float[] {
-                screenCenterX - rootLoc[0],
-                screenCenterY - rootLoc[1],
-                width,
-                height
-        };
-        launchWithCurtain(null, relBounds, commit);
+        curtainController.launchFromScreenBounds(
+                new float[] { screenCenterX, screenCenterY, width, height }, false, commit);
     }
 
     private boolean startIntentWithTransition(Intent intent, boolean curtainApplied,
@@ -2949,159 +2992,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    /**
-     * Expands the clicked tile locally (capturing its artwork cleanly into an easing rounded-corner
-     * sheet that dissolves into solid pure black as Home recedes in depth) before firing {@code commit}.
-     */
-    private void launchWithCurtain(View sourceView, float[] relBounds, AppAdapter.LaunchCommit commit) {
-        AppLaunchSettings launchCfg = AppLaunchSettings.load(this);
-        appLaunchSettings = launchCfg;
-        if (!animations || reducedMotion || !launchCfg.enabled || launchCurtain == null || root == null
-                || root.getWidth() <= 0 || root.getHeight() <= 0) {
-            commit.run(false);
-            return;
-        }
-        if (sourceView != null && !sourceView.isAttachedToWindow()) {
-            commit.run(false);
-            return;
-        }
-        if (launchCurtainPending || launchCurtainCommitted) return;
-
-        final int rootW = root.getWidth();
-        final int rootH = root.getHeight();
-        final float cx, cy, srcW, srcH;
-        if (sourceView != null) {
-            int[] srcLoc = new int[2];
-            int[] rootLoc = new int[2];
-            sourceView.getLocationInWindow(srcLoc);
-            root.getLocationInWindow(rootLoc);
-            srcW = LauncherMotion.scaledDimensionPx(sourceView.getWidth(), sourceView.getScaleX());
-            srcH = LauncherMotion.scaledDimensionPx(sourceView.getHeight(), sourceView.getScaleY());
-            cx = (srcLoc[0] - rootLoc[0]) + srcW * 0.5f;
-            cy = (srcLoc[1] - rootLoc[1]) + srcH * 0.5f;
-        } else if (relBounds != null) {
-            cx = relBounds[0];
-            cy = relBounds[1];
-            srcW = relBounds[2];
-            srcH = relBounds[3];
+    private void launchWithCurtain(View sourceView, float[] relBounds,
+                                   boolean allowFallbackOrigin, AppAdapter.LaunchCommit commit) {
+        if (curtainController != null) {
+            curtainController.launch(sourceView, relBounds, allowFallbackOrigin, commit);
         } else {
             commit.run(false);
-            return;
         }
-        if (srcW <= 0f || srcH <= 0f) {
-            commit.run(false);
-            return;
-        }
-
-        final LauncherMotion.LaunchCurtainPose pose = LauncherMotion.computeCurtainPose(
-                rootW, rootH, cx, cy, srcW, srcH);
-        final float startCornerPx = launchCfg.roundedCorners
-                ? LauncherMotion.curtainCornerRadiusPx(rootH) : 0f;
-
-        cancelLaunchCurtainAnimator();
-        final Bitmap cardBmp = (launchCfg.cardMorph && sourceView != null && sourceView.getId() == R.id.card)
-                ? captureLaunchCardBitmap(sourceView) : null;
-        replaceLaunchCurtainBitmap(cardBmp);
-
-        final int gen = ++launchCurtainGen;
-        launchCurtainPending = true;
-        launchCurtainCommitted = false;
-        launchCurtainLostFocus = false;
-        handler.removeCallbacks(clearLaunchPulse);
-
-        prepareHomeForLaunchDepth(sourceView, rootW, rootH, launchCfg);
-
-        launchCurtain.animate().setListener(null).cancel();
-        launchCurtain.setLayerType(View.LAYER_TYPE_NONE, null);
-        launchCurtainCornerPx = startCornerPx;
-        launchCurtain.invalidateOutline();
-        launchCurtain.setPivotX(rootW * 0.5f);
-        launchCurtain.setPivotY(rootH * 0.5f);
-        launchCurtain.setTranslationX(pose.tx);
-        launchCurtain.setTranslationY(pose.ty);
-        launchCurtain.setScaleX(pose.startScaleX);
-        launchCurtain.setScaleY(pose.startScaleY);
-
-        final boolean hasArt = cardBmp != null && launchCurtainArt != null;
-        if (hasArt) {
-            launchCurtain.setAlpha(1f);
-            launchCurtainArt.setImageBitmap(cardBmp);
-            launchCurtainArt.setPivotX(rootW * 0.5f);
-            launchCurtainArt.setPivotY(rootH * 0.5f);
-            launchCurtainArt.setScaleX(1f);
-            launchCurtainArt.setScaleY(1f);
-            launchCurtainArt.setAlpha(1f);
-            launchCurtainArt.setVisibility(View.VISIBLE);
-        } else {
-            launchCurtain.setAlpha(0f);
-            if (launchCurtainArt != null) {
-                launchCurtainArt.setImageDrawable(null);
-                launchCurtainArt.setVisibility(View.INVISIBLE);
-            }
-        }
-        launchCurtain.setVisibility(View.VISIBLE);
-
-        ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
-        anim.setDuration(launchCfg.sweepDurationMs());
-        anim.setInterpolator(launchCfg.createInterpolator());
-        anim.addUpdateListener(a -> {
-            if (gen != launchCurtainGen || !launchCurtainPending || launchCurtain == null) return;
-            float u = (float) a.getAnimatedValue();
-            applyLaunchFrame(u, pose, startCornerPx, hasArt, launchCfg);
-        });
-        anim.addListener(new AnimatorListenerAdapter() {
-            private boolean cancelled;
-
-            @Override
-            public void onAnimationCancel(Animator animation) {
-                cancelled = true;
-            }
-
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                if (launchCurtainAnimator == animation) {
-                    launchCurtainAnimator = null;
-                }
-                if (cancelled || gen != launchCurtainGen || !launchCurtainPending
-                        || isFinishing() || isDestroyed()) {
-                    return;
-                }
-                applyLaunchFrame(1f, pose, startCornerPx, hasArt, launchCfg);
-                disposeLaunchCurtainArt();
-                commitAfterCurtainExpand(gen, commit);
-            }
-        });
-        launchCurtainAnimator = anim;
-        anim.start();
     }
 
-    private void applyLaunchFrame(float u, LauncherMotion.LaunchCurtainPose pose,
-                                  float startCornerPx, boolean hasArt, AppLaunchSettings launchCfg) {
-        if (launchCurtain == null) return;
-        launchCurtain.setTranslationX(pose.tx * (1f - u));
-        launchCurtain.setTranslationY(pose.ty * (1f - u));
-        launchCurtain.setScaleX(pose.startScaleX + (pose.fullScaleX - pose.startScaleX) * u);
-        launchCurtain.setScaleY(pose.startScaleY + (pose.fullScaleY - pose.startScaleY) * u);
-        launchCurtainCornerPx = startCornerPx > 0f
-                ? LauncherMotion.curtainCornerRadiusAt(startCornerPx, u) : 0f;
-        launchCurtain.invalidateOutline();
-
-        if (hasArt && launchCurtainArt != null) {
-            float artAlpha = LauncherMotion.curtainArtAlphaAt(u);
-            if (artAlpha > 0.001f) {
-                launchCurtainArt.setAlpha(artAlpha);
-                float artScale = 1f + 0.10f * u;
-                launchCurtainArt.setScaleX(artScale);
-                launchCurtainArt.setScaleY(artScale);
-            } else if (launchCurtainArt.getVisibility() == View.VISIBLE) {
-                launchCurtainArt.setAlpha(0f);
-                launchCurtainArt.setVisibility(View.INVISIBLE);
-            }
-        } else {
-            launchCurtain.setAlpha(Math.min(1f, u / 0.28f));
-        }
-
-        // Recede Home behind the opening window according to configured background depth.
+    private void applyHomeDepthProgress(float u, AppLaunchSettings launchCfg) {
         float bgScaleDelta = launchCfg.bgScaleDelta();
         float bgDimFactor = launchCfg.bgDimFactor();
         float heroRaceDim = Math.min(0.88f, bgDimFactor * 1.11f);
@@ -3129,67 +3029,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    private void commitAfterCurtainExpand(int gen, AppAdapter.LaunchCommit commit) {
-        if (gen != launchCurtainGen || !launchCurtainPending || isFinishing() || isDestroyed()) {
-            clearLaunchCurtainImmediate();
-            return;
-        }
-        launchCurtainPending = false;
-        launchCurtainCommitted = true;
-        boolean launched = commit.run(true);
-        if (launched) {
-            handler.removeCallbacks(clearLaunchPulse);
-            handler.postDelayed(clearLaunchPulse, DEAD_LAUNCH_TIMEOUT_MS);
-        } else {
-            resetLaunchTilesAndDim();
-            fadeOutLaunchCurtainForResume();
-        }
-    }
-
-    private Bitmap captureLaunchCardBitmap(View card) {
-        int w = card.getWidth();
-        int h = card.getHeight();
-        if (w <= 0 || h <= 0) return null;
-        try {
-            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bmp);
-            card.draw(canvas);
-            return bmp;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private void replaceLaunchCurtainBitmap(Bitmap next) {
-        Bitmap prev = launchCurtainBitmap;
-        launchCurtainBitmap = next;
-        if (prev != null && prev != next && !prev.isRecycled()) {
-            prev.recycle();
-        }
-    }
-
-    private void disposeLaunchCurtainArt() {
-        if (launchCurtainArt != null) {
-            launchCurtainArt.setImageDrawable(null);
-            launchCurtainArt.setScaleX(1f);
-            launchCurtainArt.setScaleY(1f);
-            launchCurtainArt.setAlpha(0f);
-            launchCurtainArt.setVisibility(View.INVISIBLE);
-        }
-        replaceLaunchCurtainBitmap(null);
-    }
-
-    private void cancelLaunchCurtainAnimator() {
-        ValueAnimator anim = launchCurtainAnimator;
-        launchCurtainAnimator = null;
-        if (anim != null) {
-            anim.cancel();
-        }
-    }
-
     private void prepareHomeForLaunchDepth(View sourceCard, int rootW, int rootH, AppLaunchSettings launchCfg) {
         resetLaunchTilesAndDim();
-        if (sourceCard != null) {
+        if (sourceCard != null && sourceCard.getId() == R.id.card) {
             launchingCard = sourceCard;
             sourceCard.animate().setListener(null).cancel();
         }
@@ -3223,85 +3065,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    private void settleLaunchPulseIfResumed() {
-        // Never remove the curtain while paused or unfocused: the target app is still loading
-        // and either onStop() (once covered) or onResume() / focus return will clear it safely.
-        if (!resumed || !hasWindowFocus()) return;
-        resetLaunchTilesAndDim();
-        fadeOutLaunchCurtainForResume();
-    }
-
     private void onResumeLaunchCleanup() {
-        resetLaunchTilesAndDim();
-        if (launchCurtainPending) {
-            clearLaunchCurtainImmediate();
-        } else if (launchCurtainCommitted) {
-            fadeOutLaunchCurtainForResume();
-        } else if (launchCurtain != null && launchCurtain.getVisibility() == View.VISIBLE) {
-            clearLaunchCurtainImmediate();
-        }
+        if (curtainController != null) curtainController.onResume();
     }
 
     private void onPauseLaunchCleanup() {
-        handler.removeCallbacks(clearLaunchPulse);
-        resetLaunchTilesAndDim();
-        if (launchCurtainCommitted) {
-            launchCurtainLostFocus = true;
-        } else {
-            clearLaunchCurtainImmediate();
-        }
-    }
-
-    private void fadeOutLaunchCurtainForResume() {
-        launchCurtainGen++;
-        launchCurtainPending = false;
-        launchCurtainCommitted = false;
-        launchCurtainLostFocus = false;
-        handler.removeCallbacks(clearLaunchPulse);
-        cancelLaunchCurtainAnimator();
-        disposeLaunchCurtainArt();
-        if (launchCurtain == null || launchCurtain.getVisibility() != View.VISIBLE) return;
-        if (!animations || reducedMotion) {
-            clearLaunchCurtainImmediate();
-            return;
-        }
-        final int gen = launchCurtainGen;
-        launchCurtain.animate().setListener(null).cancel();
-        launchCurtain.animate()
-                .alpha(0f)
-                .setDuration(140L)
-                .setInterpolator(new DecelerateInterpolator(1.6f))
-                .withEndAction(() -> {
-                    if (gen == launchCurtainGen) clearLaunchCurtainImmediate();
-                })
-                .start();
-    }
-
-    private void clearLaunchCurtainImmediate() {
-        launchCurtainGen++;
-        launchCurtainPending = false;
-        launchCurtainCommitted = false;
-        launchCurtainLostFocus = false;
-        handler.removeCallbacks(clearLaunchPulse);
-        cancelLaunchCurtainAnimator();
-        disposeLaunchCurtainArt();
-        if (launchCurtain != null) {
-            launchCurtain.animate().setListener(null).cancel();
-            launchCurtain.setVisibility(View.INVISIBLE);
-            launchCurtain.setAlpha(0f);
-            launchCurtain.setTranslationX(0f);
-            launchCurtain.setTranslationY(0f);
-            launchCurtain.setScaleX(1f);
-            launchCurtain.setScaleY(1f);
-            launchCurtainCornerPx = 0f;
-            launchCurtain.invalidateOutline();
-            launchCurtain.setLayerType(View.LAYER_TYPE_NONE, null);
-        }
+        if (curtainController != null) curtainController.onPause();
     }
 
     private void resetLaunchPulse() {
-        resetLaunchTilesAndDim();
-        clearLaunchCurtainImmediate();
+        if (curtainController != null) curtainController.destroy();
     }
 
     private void resetLaunchTilesAndDim() {
@@ -4871,9 +4644,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * The network pill opens the VPN app when one is configured and installed, otherwise Wi-Fi settings. With
      * vpn_pill the VPN app has its own pill, so this one always opens Wi-Fi settings.
      */
-    private void openNetworkPill() {
+    private void openNetworkPill(View sourceView) {
         Intent i = vpnPill ? null : vpnAppIntent();
-        open(i != null ? i : systemIntent(Settings.ACTION_WIFI_SETTINGS));
+        open(i != null ? i : systemIntent(Settings.ACTION_WIFI_SETTINGS), sourceView);
+    }
+
+    private void openNetworkPillFromScreenBounds(float[] screenBounds) {
+        Intent i = vpnPill ? null : vpnAppIntent();
+        openFromScreenBounds(i != null ? i : systemIntent(Settings.ACTION_WIFI_SETTINGS), screenBounds);
     }
 
     /** vpn_app's launch intent, or null when none is set or it is not installed. */
@@ -4887,10 +4665,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * vpn_pill: the VPN app, where it is switched on and off. Without one installed, the App library to pick from, or
      * Android's VPN settings when the theme turned the library off.
      */
-    private void openVpnPill() {
+    private void openVpnPill(View sourceView) {
         Intent i = vpnAppIntent();
         if (i != null || !appLibraryEnabled) {
-            open(i != null ? i : systemIntent(Settings.ACTION_VPN_SETTINGS));
+            open(i != null ? i : systemIntent(Settings.ACTION_VPN_SETTINGS), sourceView);
             return;
         }
         onLibraryRequested();
@@ -4999,7 +4777,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (OpenOnStart.online(this)) handler.post(openWhenOnline);
             return false;
         }
-        open(i);
+        openDirect(i);
         return true;
     }
 
@@ -5014,7 +4792,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** The TV's own source-selection panel, for TVs that have no TvInputManager (TCL Android TV 9): a
      *  service, or an activity on sets whose panel is a dialog (BYINTEK U4's QuickSourceActivity). */
-    private void openSourcePanel() {
+    private void openSourcePanel(float[] screenBounds) {
         Intent i = new Intent(sourcePanelAction);
         ComponentName c = ComponentName.unflattenFromString(sourcePanelService);
         if (c != null) i.setComponent(c);
@@ -5028,14 +4806,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         try {
             if (getPackageManager().resolveActivity(i, 0) != null) {
-                setAppLaunched(true);
-                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                openFromScreenBounds(i, screenBounds);
                 return;
             }
             startService(i);
         } catch (Exception e) {
             Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void openDirect(Intent i) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        startIntentWithTransition(i, false, true, onNotAvailable);
     }
 
     private void open(Intent i) {
@@ -5059,7 +4842,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
         AppAdapter.LaunchCommit commit = curtainApplied ->
                 startIntentWithTransition(i, curtainApplied, true, onNotAvailable);
-        launchWithCurtain(sourceView, null, commit);
+        launchWithCurtain(sourceView, null, true, commit);
+    }
+
+    private void openFromScreenBounds(Intent i, float[] screenBounds) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        boolean quickPanel = i.getComponent() != null
+                && QuickSettingsActivity.class.getName().equals(i.getComponent().getClassName());
+        if (quickPanel) {
+            open(i, null);
+            return;
+        }
+        Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        AppAdapter.LaunchCommit commit = curtainApplied ->
+                startIntentWithTransition(i, curtainApplied, true, onNotAvailable);
+        if (curtainController != null) {
+            curtainController.launchFromScreenBounds(screenBounds, true, commit);
+        } else {
+            commit.run(false);
+        }
     }
 
     /** `input_sources` in config.xml or a theme: "HW5=23" maps the framework input whose id ends in /HW5 to a vendor
@@ -5081,6 +4882,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *  throws SecurityException, which used to take Home down with it (YaOS before the manifest asked
      *  for ACCESS_TV_SOURCE). */
     private void openInput(String inputId) {
+        openInput(inputId, (float[]) null);
+    }
+
+    private void openInput(String inputId, float[] screenBounds) {
         // A CEC device is a child input of its HDMI port; the vendor source number belongs to the port
         // (MiTV-MFFU0). Only that lookup uses the parent: the generic path below still opens the child.
         String sourceId = inputId;
@@ -5093,26 +4898,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         Integer source = mappedSource(sourceId);
+        List<Intent> candidates = new ArrayList<>(4);
         if (source != null && source >= 0 && !inputAction.isEmpty()) {
-            try {
-                setAppLaunched(true);
-                startActivity(inputActionIntent().putExtra("input", source.intValue())
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                return;
-            } catch (ActivityNotFoundException | SecurityException e) {
-                // fall through to the standard way
-            }
+            candidates.add(inputActionIntent().putExtra("input", source.intValue())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } else if (source == null && InputSources.isComponent(inputAction)) {
-            // An activity named in input_action is the vendor's own source picker (Xiaomi: tvplayer's
-            // ExternalSourceActivity). Its firmware answers the standard channel URI with "unsupported", so the
-            // row goes straight there; the picker is the overlay the remote's Source button opens.
-            try {
-                setAppLaunched(true);
-                startActivity(inputActionIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                return;
-            } catch (ActivityNotFoundException | SecurityException e) {
-                // fall through to the standard way
-            }
+            candidates.add(inputActionIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
         Uri uri = TvContract.buildChannelUriForPassthroughInput(inputId);
         Intent view = (inputUriScheme.isEmpty()
@@ -5122,24 +4913,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Aim it at the TV app first: apps installed later (a streaming app, a file manager) can claim the same
         // channel URI too, and with two or more handlers Android shows a chooser instead of the input (WhaleOS).
         if (!liveTvPkg.isEmpty()) {
-            try {
-                setAppLaunched(true);
-                startActivity(new Intent(view).setPackage(liveTvPkg));
-                return;
-            } catch (ActivityNotFoundException | SecurityException ignored) {
-            }
+            candidates.add(new Intent(view).setPackage(liveTvPkg));
         }
-        try {
-            setAppLaunched(true);
-            startActivity(view);
-            return;
-        } catch (ActivityNotFoundException | SecurityException e) {
-            if (inputAction.isEmpty()) {
-                Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
-                return;
-            }
+        candidates.add(view);
+        if (!inputAction.isEmpty()) {
+            candidates.add(inputActionIntent().setDataAndType(uri, "vnd.android.cursor.item/channel")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
-        open(inputActionIntent().setDataAndType(uri, "vnd.android.cursor.item/channel"));
+
+        AppAdapter.LaunchCommit commit = curtainApplied -> {
+            for (Intent cand : candidates) {
+                if (startIntentWithTransition(cand, curtainApplied, true, null)) {
+                    return true;
+                }
+            }
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+            return false;
+        };
+        if (curtainController != null) {
+            curtainController.launchFromScreenBounds(screenBounds, true, commit);
+        } else {
+            commit.run(false);
+        }
     }
 
     /** `input_action` as an intent: an explicit component when it reads "package/.Activity", else an action. */
@@ -5155,7 +4950,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // The BYINTEK U4 needs this, as its TvInputManager lists three HDMI ports and an AV input it doesn't have.
         List<CoocaaSources.Source> coocaa = coocaaSources ? CoocaaSources.list(this) : Collections.emptyList();
         if (coocaa.isEmpty() && !sourcePanelService.isEmpty() && liveTvIntent() == null) {
-            openSourcePanel();
+            openSourcePanel(LauncherMotion.captureScreenBounds(findViewById(R.id.btnInputs)));
             return;
         }
         // top_menu: the pill is gone, so the list hangs under the gear, growing inward from the right.
@@ -5265,7 +5060,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         String deviceLabel = name == null || name.length() == 0 ? label : name + " \u00B7 " + label;
                         final String deviceId = device.getId();
                         int state = hdmiStateBogus && !inputsCecStateOnly ? -1 : tim.getInputState(deviceId);
-                        View row = addInputRow(rows, popup, R.drawable.ic_input, deviceLabel, state, () -> openInput(deviceId));
+                        View row = addInputRow(rows, popup, R.drawable.ic_input, deviceLabel, state,
+                                (RowAction) bounds -> openInput(deviceId, bounds));
                         if (connectedOnly && InputFold.folds(true, state)) fold(row, folded);
                     }
                     continue;
@@ -5277,7 +5073,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 // (TCL Smart TV Pro G03 says "Connected" with nothing plugged in), so AV rows show no state.
                 int state = !hdmi || hdmiStateBogus ? -1 : tim.getInputState(id);
                 View row = addInputRow(rows, popup, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
-                        () -> openInput(id));
+                        (RowAction) bounds -> openInput(id, bounds));
                 if (connectedOnly && InputFold.folds(hdmi, state)) fold(row, folded);
             }
         }
@@ -5317,7 +5113,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         // Nothing to list where there is no TvInputManager: the TV's own source panel switches inputs.
         if (rows.getChildCount() == 0 && !sourcePanelService.isEmpty()) {
-            addInputRow(rows, popup, R.drawable.ic_input, getString(R.string.inputs), -1, this::openSourcePanel);
+            addInputRow(rows, popup, R.drawable.ic_input, getString(R.string.inputs), -1,
+                    (RowAction) this::openSourcePanel);
         }
         Intent liveTv = liveTvIntent();
         if (liveTv != null && tunerId != null) {
@@ -5347,7 +5144,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (liveTv != null) {
             if (rows.getChildCount() > 0) addSeparator(rows);
             final Intent liveTvIntent = liveTv;
-            addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
+            addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1,
+                    (RowAction) bounds -> openFromScreenBounds(liveTvIntent, bounds));
         }
         if (rows.getChildCount() == 0) {
             Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
@@ -5424,6 +5222,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private View addInputRow(LinearLayout rows, PopupWindow popup, int iconRes, String title, int state, Runnable action) {
+        return addInputRow(rows, popup, iconRes, title, state, bounds -> action.run());
+    }
+
+    private View addInputRow(LinearLayout rows, PopupWindow popup, int iconRes, String title, int state, RowAction action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(iconRes);
         ((TextView) row.findViewById(R.id.title)).setText(title);
@@ -5449,8 +5251,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         });
         row.setOnClickListener(v -> {
+            float[] screenBounds = LauncherMotion.captureScreenBounds(v);
             popup.dismiss();
-            action.run();
+            action.run(screenBounds);
         });
         rows.addView(row);
         return row;
@@ -5490,7 +5293,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         PopupWindow popup = glassPopup(panel, (int) (220 * density));
         // Inputs opens its own list once this one has closed.
         if (showInputsMenuRow) addInputRow(rows, popup, R.drawable.ic_input, getString(R.string.inputs), -1, () -> root.post(this::showInputs));
-        addInputRow(rows, popup, R.drawable.ic_wifi, getString(R.string.quick_network), -1, this::openNetworkPill);
+        addInputRow(rows, popup, R.drawable.ic_wifi, getString(R.string.quick_network), -1,
+                (RowAction) this::openNetworkPillFromScreenBounds);
         CharSequence network = wifiIconOnly ? btnWifi.getContentDescription() : btnWifi.getText();
         if (!TextUtils.isEmpty(network)) {
             TextView status = rows.getChildAt(rows.getChildCount() - 1).findViewById(R.id.status);
@@ -5498,14 +5302,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             status.setVisibility(View.VISIBLE);
         }
         addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1,
-                () -> open(SystemSettings.bluetoothSettingsIntent(this)));
+                (RowAction) bounds -> openFromScreenBounds(SystemSettings.bluetoothSettingsIntent(this), bounds));
         addInputRow(rows, popup, R.drawable.ic_swap_vert, getString(R.string.reorder), -1, this::toggleReorder);
         if (launcherSettingsButton) {
             addInputRow(rows, popup, R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), -1,
-                    this::openLauncherSettings);
+                    (RowAction) this::openLauncherSettingsFromScreenBounds);
         } else {
             addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.settings), -1,
-                    () -> open(systemIntent(Settings.ACTION_SETTINGS)));
+                    (RowAction) bounds -> openFromScreenBounds(systemIntent(Settings.ACTION_SETTINGS), bounds));
         }
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (360 * density))));
@@ -5519,14 +5323,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
         PopupWindow popup = glassPopup(panel, (int) (200 * density));
-        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, this::openLauncherSettings);
+        if (!launcherSettingsButton) {
+            addSettingsMenuRow(rows, popup, R.string.launcher_settings,
+                    (RowAction) this::openLauncherSettingsFromScreenBounds);
+        }
         // Firmware that ships its own settings app next to the AOSP one (Xiaomi China is one): the
         // vendor app holds pages the AOSP settings has no row for, such as Account & Security with
         // the ADB switch. Offered here only while one of them is installed.
         if (SystemSettings.vendorIntent(this) != null) {
-            addSettingsMenuRow(rows, popup, R.string.native_settings, () -> {
+            addSettingsMenuRow(rows, popup, R.string.native_settings, (RowAction) bounds -> {
                 Intent vendor = SystemSettings.vendorIntent(this);
-                if (vendor != null) open(vendor);
+                if (vendor != null) openFromScreenBounds(vendor, bounds);
             });
         }
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
@@ -5691,21 +5498,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
-        View bluetoothRow = addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1, () -> {
-            open(SystemSettings.bluetoothSettingsIntent(this));
-        });
+        View bluetoothRow = addInputRow(rows, popup, R.drawable.ic_bluetooth, getString(R.string.quick_bluetooth), -1,
+                (RowAction) bounds -> openFromScreenBounds(SystemSettings.bluetoothSettingsIntent(this), bounds));
         bluetoothRow.setId(View.generateViewId());
 
         boostRow.setNextFocusDownId(bluetoothRow.getId());
         bluetoothRow.setNextFocusUpId(boostRow.getId());
 
-        addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.native_settings), -1, () -> {
-            Intent storage = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
-            if (storage.resolveActivity(getPackageManager()) == null) {
-                storage = new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS);
-            }
-            open(storage);
-        });
+        addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.native_settings), -1,
+                (RowAction) bounds -> {
+                    Intent storage = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
+                    if (storage.resolveActivity(getPackageManager()) == null) {
+                        storage = new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS);
+                    }
+                    openFromScreenBounds(storage, bounds);
+                });
 
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (300 * density), panel.getMeasuredWidth()));
@@ -5722,6 +5529,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onOpenInput(String inputId) {
         openInput(inputId);
+    }
+
+    @Override
+    public void onOpenInput(String inputId, View sourceCard) {
+        openInput(inputId, LauncherMotion.captureScreenBounds(sourceCard));
     }
 
     /**
@@ -5843,7 +5655,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
         // Some firmware has no App info page at all; a row that only toasts "can't open" helps nobody.
         Intent info = SystemSettings.appInfo(this, pkg);
-        if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info, () -> open(info));
+        if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info,
+                (RowAction) bounds -> openFromScreenBounds(info, bounds));
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
         // Dock tiles sit near the bottom of the screen: open the menu above the tile when it would not fit below.
@@ -5874,6 +5687,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, Runnable action) {
+        addSettingsMenuRow(rows, popup, title, (RowAction) bounds -> action.run());
+    }
+
+    private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, RowAction action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         row.findViewById(R.id.icon).setVisibility(View.GONE);
         row.findViewById(R.id.dot).setVisibility(View.GONE);
@@ -5887,8 +5704,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         });
         row.setOnClickListener(v -> {
+            float[] screenBounds = LauncherMotion.captureScreenBounds(v);
             popup.dismiss();
-            action.run();
+            action.run(screenBounds);
         });
         // The OK-up after opening the menu must not activate its first row.
         final boolean[] pressed = {false};
@@ -5901,8 +5719,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             boolean activate = pressed[0];
             pressed[0] = false;
             if (activate) {
+                float[] screenBounds = LauncherMotion.captureScreenBounds(v);
                 popup.dismiss();
-                action.run();
+                action.run(screenBounds);
             }
             return true;
         });

@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/launchRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF101419"
+    android:background="#FF101419">
+
+<ScrollView
+    android:id="@+id/launcherSettingsContent"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:fillViewport="true">
 
     <LinearLayout
@@ -226,3 +232,27 @@
             android:textSize="14sp" />
     </LinearLayout>
 </ScrollView>
+
+    <FrameLayout
+        android:id="@+id/launchCurtain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:elevation="24dp"
+        android:alpha="0"
+        android:visibility="invisible"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no">
+
+        <ImageView
+            android:id="@+id/launchCurtainArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:alpha="0"
+            android:visibility="invisible"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
+</FrameLayout>

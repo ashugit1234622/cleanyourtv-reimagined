@@ -19,6 +19,8 @@ public final class LauncherMotion {
     private static final long PRESS_RELEASE_MS = 110L;
     /** Duration of the continuous iOS-style ease-in tile-to-fullscreen launch sweep. */
     public static final long CURTAIN_SWEEP_MS = 410L;
+    /** Marks an internal handoff whose curtain sweep already expanded in the previous overlay. */
+    public static final String EXTRA_SKIP_LAUNCH_CURTAIN = "com.gathin.tvhome.extra.SKIP_LAUNCH_CURTAIN";
     private static final float CURTAIN_CORNER_HEIGHT_FRACTION = 0.155f;
 
     private LauncherMotion() {
@@ -159,6 +161,53 @@ public final class LauncherMotion {
         if (sizePx <= 0) return 0;
         float safeScale = Float.isFinite(scale) && scale > 0f ? scale : 1f;
         return Math.max(1, Math.round(sizePx * safeScale));
+    }
+
+    /**
+     * Captures the visual screen-space rectangle of {@code view} as {@code {cx, cy, width, height}}
+     * prior to dismissing a popup or dialog. Returns {@code null} when unavailable.
+     */
+    public static float[] captureScreenBounds(View view) {
+        if (view == null || !view.isAttachedToWindow()) return null;
+        int w = scaledDimensionPx(view.getWidth(), view.getScaleX());
+        int h = scaledDimensionPx(view.getHeight(), view.getScaleY());
+        if (w <= 0 || h <= 0) return null;
+        int[] loc = new int[2];
+        view.getLocationOnScreen(loc);
+        return new float[] { loc[0] + w * 0.5f, loc[1] + h * 0.5f, w, h };
+    }
+
+    /** Translates captured screen-space {@code {cx, cy, w, h}} bounds into container-local coordinates. */
+    public static float[] screenToLocalBounds(float[] screenBounds, int containerScreenX, int containerScreenY) {
+        if (screenBounds == null || screenBounds.length < 4) return null;
+        float cx = screenBounds[0];
+        float cy = screenBounds[1];
+        float w = screenBounds[2];
+        float h = screenBounds[3];
+        if (!Float.isFinite(cx) || !Float.isFinite(cy) || !Float.isFinite(w) || !Float.isFinite(h)
+                || w <= 0f || h <= 0f) {
+            return null;
+        }
+        return new float[] { cx - containerScreenX, cy - containerScreenY, w, h };
+    }
+
+    /** View overload of {@link #screenToLocalBounds(float[], int, int)}. */
+    public static float[] screenToLocalBounds(float[] screenBounds, View container) {
+        if (screenBounds == null || container == null) return null;
+        int[] containerLoc = new int[2];
+        container.getLocationOnScreen(containerLoc);
+        return screenToLocalBounds(screenBounds, containerLoc[0], containerLoc[1]);
+    }
+
+    /** Centered subtle expansion origin when an interactive launch has no attached source view or bounds. */
+    public static float[] computeFallbackBounds(int rootW, int rootH) {
+        if (rootW <= 0 || rootH <= 0) return null;
+        return new float[] {
+                rootW * 0.5f,
+                rootH * 0.5f,
+                Math.max(1f, rootW * 0.14f),
+                Math.max(1f, rootH * 0.12f)
+        };
     }
 
     /** Applies the seamless black-to-app reveal transition after the local curtain fills the screen. */

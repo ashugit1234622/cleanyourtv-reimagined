@@ -121,5 +121,43 @@ public class LauncherMotionTest {
         assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, false, true, false));
         assertFalse(LauncherMotion.shouldPlayReturnSettle(true, false, true, false, false, false, true));
     }
+
+    @Test
+    public void screenToLocalBoundsTranslatesAndValidates() {
+        float[] local = LauncherMotion.screenToLocalBounds(
+                new float[] { 1540f, 92f, 180f, 44f }, 0, 0);
+        assertEquals(1540f, local[0], 0.01f);
+        assertEquals(92f, local[1], 0.01f);
+        assertEquals(180f, local[2], 0.01f);
+        assertEquals(44f, local[3], 0.01f);
+
+        // Window offset subtracts container origin
+        float[] offsetLocal = LauncherMotion.screenToLocalBounds(
+                new float[] { 600f, 300f, 200f, 50f }, 100, 40);
+        assertEquals(500f, offsetLocal[0], 0.01f);
+        assertEquals(260f, offsetLocal[1], 0.01f);
+
+        // Invalid dimensions rejected cleanly
+        assertEquals(null, LauncherMotion.screenToLocalBounds(new float[] { 100f, 100f, 0f, 40f }, 0, 0));
+        assertEquals(null, LauncherMotion.screenToLocalBounds(new float[] { Float.NaN, 100f, 100f, 40f }, 0, 0));
+        assertEquals(null, LauncherMotion.screenToLocalBounds(null, 0, 0));
+    }
+
+    @Test
+    public void fallbackOriginAndNarrowPillPoseAreFiniteAndClamped() {
+        float[] fallback = LauncherMotion.computeFallbackBounds(1920, 1080);
+        assertEquals(960f, fallback[0], 0.01f);
+        assertEquals(540f, fallback[1], 0.01f);
+        assertTrue(fallback[2] > 0f && fallback[3] > 0f);
+        assertEquals(null, LauncherMotion.computeFallbackBounds(0, 1080));
+
+        // Top-right Wi-Fi pill (wide & short capsule) must produce finite non-NaN launch pose
+        LauncherMotion.LaunchCurtainPose pillPose = LauncherMotion.computeCurtainPose(
+                1920, 1080, 1520f, 84f, 184f, 42f);
+        assertEquals(560f, pillPose.tx, 0.01f);
+        assertEquals(-456f, pillPose.ty, 0.01f);
+        assertEquals(184f / 1920f, pillPose.startScaleX, 0.0001f);
+        assertEquals(42f / 1080f, pillPose.startScaleY, 0.0001f);
+    }
 }
 

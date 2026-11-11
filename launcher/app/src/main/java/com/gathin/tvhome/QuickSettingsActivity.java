@@ -10,7 +10,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -29,10 +32,15 @@ import java.util.Set;
 public final class QuickSettingsActivity extends Activity {
     private static final String CACHE_PREFS = "quick_settings_cache";
     private static ClassLoader sMitvClassLoader;
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private QuickSettingsFocusIndicator focusIndicator;
+    private View panel;
+    private LaunchCurtainController curtainController;
+    private LaunchCurtainController.PanelDepthDelegate depthDelegate;
     private boolean animations = true;
     private boolean reducedMotion = false;
     private boolean panelEntered = false;
+    private boolean launchingTarget = false;
 
     private ClassLoader getMitvClassLoader() {
         if (sMitvClassLoader == null) {
@@ -71,8 +79,8 @@ public final class QuickSettingsActivity extends Activity {
         Config cfg = Config.load(this);
         animations = cfg.animations;
         reducedMotion = cfg.reducedMotion;
+        panel = findViewById(R.id.panel);
         if (getResources().getBoolean(R.bool.rtl_menu_bar)) {
-            View panel = findViewById(R.id.panel);
             android.widget.FrameLayout.LayoutParams position =
                     (android.widget.FrameLayout.LayoutParams) panel.getLayoutParams();
             position.gravity = android.view.Gravity.TOP | android.view.Gravity.LEFT;
@@ -82,19 +90,77 @@ public final class QuickSettingsActivity extends Activity {
             panel.setLayoutParams(position);
         }
         View scrim = findViewById(R.id.scrim);
-        scrim.setOnClickListener(v -> finish());
+        scrim.setOnClickListener(v -> {
+            if (curtainController == null || !curtainController.isBusy()) {
+                finish();
+            }
+        });
         scrim.setFocusable(false);
         scrim.setFocusableInTouchMode(false);
         focusIndicator = findViewById(R.id.focusIndicator);
         if (focusIndicator != null) {
             focusIndicator.setReducedMotion(reducedMotion);
         }
+        depthDelegate = new LaunchCurtainController.PanelDepthDelegate(panel, true);
+        curtainController = new LaunchCurtainController(
+                this,
+                handler,
+                scrim,
+                findViewById(R.id.launchCurtain),
+                findViewById(R.id.launchCurtainArt),
+                new LaunchCurtainController.Host() {
+                    @Override
+                    public boolean animationsEnabled() {
+                        return animations;
+                    }
+
+                    @Override
+                    public boolean reducedMotionEnabled() {
+                        return reducedMotion;
+                    }
+
+                    @Override
+                    public void onBeforeCurtainExpand(View sourceView, int rootW, int rootH, AppLaunchSettings cfg) {
+                        depthDelegate.prepare(rootW, rootH, cfg);
+                    }
+
+                    @Override
+                    public void onCurtainDepthProgress(float easedProgress, AppLaunchSettings cfg) {
+                        depthDelegate.update(easedProgress, cfg);
+                    }
+
+                    @Override
+                    public void onRestoreBackground() {
+                        launchingTarget = false;
+                        depthDelegate.restore();
+                    }
+
+                    @Override
+                    public boolean shouldCaptureArtBitmap(View sourceView) {
+                        return false;
+                    }
+
+                    @Override
+                    public void onTranslucentFinish() {
+                        launchingTarget = false;
+                        if (!isFinishing() && !isDestroyed()) {
+                            finish();
+                        }
+                    }
+                });
+        curtainController.setTranslucentHost(true);
         buildRows();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (curtainController != null) {
+            curtainController.onResume();
+        }
+        if (panel != null && (curtainController == null || !curtainController.isBusy())) {
+            panel.setVisibility(View.VISIBLE);
+        }
         buildRows();
     }
 
@@ -121,7 +187,9 @@ public final class QuickSettingsActivity extends Activity {
         addRow(rows, R.drawable.ic_apps, getString(R.string.quick_apps),
                 SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
         addRow(rows, R.drawable.ic_home_settings, getString(R.string.launcher_settings),
-                new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));
+                new Intent(this, MainActivity.class)
+                        .setAction(MainActivity.ACTION_LAUNCHER_SETTINGS)
+                        .putExtra(LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, true));
 
         if (!panelEntered) {
             panelEntered = true;
@@ -162,7 +230,19 @@ public final class QuickSettingsActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        finish();
+        if (curtainController == null || !curtainController.isBusy()) {
+            finish();
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        int code = event != null ? event.getKeyCode() : 0;
+        boolean isOk = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER;
+        if (curtainController != null && curtainController.handleDispatchKeyEvent(event, isOk)) {
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
@@ -175,7 +255,32 @@ public final class QuickSettingsActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (curtainController != null && curtainController.isBusy()) {
+            launchingTarget = true;
+            curtainController.onPause();
+            return;
+        }
         finish();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (curtainController != null) {
+            curtainController.onStop();
+        }
+        if (launchingTarget && !isFinishing()) {
+            launchingTarget = false;
+            finish();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (curtainController != null) {
+            curtainController.destroy();
+        }
     }
 
     private void addRow(LinearLayout rows, int icon, CharSequence title, Intent target) {
@@ -183,12 +288,40 @@ public final class QuickSettingsActivity extends Activity {
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(icon);
         ((TextView) row.findViewById(R.id.title)).setText(title);
         row.setOnClickListener(v -> {
-            try {
-                startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (ActivityNotFoundException | SecurityException e) {
-                Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+            Intent launchIntent = new Intent(target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            boolean handoffToLauncher = launchIntent.getBooleanExtra(
+                    LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, false);
+            AppAdapter.LaunchCommit commit = curtainApplied -> {
+                if (curtainApplied && depthDelegate != null) {
+                    depthDelegate.commitHide();
+                }
+                try {
+                    startActivity(launchIntent);
+                    launchingTarget = curtainApplied;
+                    if (handoffToLauncher) {
+                        LauncherMotion.clearWindowTransition(this);
+                    } else if (curtainApplied) {
+                        LauncherMotion.applyCurtainOpenTransition(
+                                this, animations, reducedMotion, curtainController.lastSettings());
+                    } else {
+                        LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+                    }
+                    if (!curtainApplied) {
+                        finish();
+                    }
+                    return true;
+                } catch (ActivityNotFoundException | SecurityException e) {
+                    launchingTarget = false;
+                    Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+                    if (!curtainApplied) finish();
+                    return false;
+                }
+            };
+            if (curtainController != null) {
+                curtainController.launch(v, null, true, commit);
+            } else {
+                commit.run(false);
             }
-            finish();
         });
         row.setOnFocusChangeListener((v, focused) -> {
             if (focused && focusIndicator != null) {
