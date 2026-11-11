@@ -2346,6 +2346,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    /**
+     * Holds Home's solid black launch curtain beneath a paused translucent overlay (e.g. Quick Settings)
+     * before it launches another window, preventing Home from flashing during cold starts or across
+     * translucent target activities.
+     */
+    static boolean holdCurtainForPausedOverlayLaunch(AppLaunchSettings launchCfg) {
+        MainActivity act = activeInstance;
+        if (act == null || !act.started || act.resumed || act.stopped
+                || act.isFinishing() || act.isDestroyed() || act.curtainController == null
+                || !act.animations || act.reducedMotion
+                || (launchCfg != null && !launchCfg.enabled)) {
+            return false;
+        }
+        act.curtainController.holdForPausedOverlayLaunch(launchCfg);
+        return true;
+    }
+
+    static void releasePausedOverlayCurtain() {
+        MainActivity act = activeInstance;
+        if (act != null && !act.isFinishing() && !act.isDestroyed() && act.curtainController != null) {
+            act.curtainController.clearImmediate();
+        }
+    }
+
     public static boolean playCustomIntro(Context ctx, String title, String subtitle, String anim, int holdMs) {
         if (ctx == null) ctx = activeInstance;
         if (ctx == null) return false;

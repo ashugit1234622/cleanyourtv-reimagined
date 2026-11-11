@@ -41,6 +41,7 @@ public final class QuickSettingsActivity extends Activity {
     private boolean reducedMotion = false;
     private boolean panelEntered = false;
     private boolean launchingTarget = false;
+    private boolean backedByHomeCurtain = false;
 
     private ClassLoader getMitvClassLoader() {
         if (sMitvClassLoader == null) {
@@ -141,10 +142,17 @@ public final class QuickSettingsActivity extends Activity {
                     }
 
                     @Override
+                    public long translucentFinishDelayMs(AppLaunchSettings cfg) {
+                        return LaunchCurtainController.translucentOverlayFinishDelayMs(
+                                cfg, backedByHomeCurtain);
+                    }
+
+                    @Override
                     public void onTranslucentFinish() {
                         launchingTarget = false;
+                        backedByHomeCurtain = false;
                         if (!isFinishing() && !isDestroyed()) {
-                            finish();
+                            finishForCurtainHandoff();
                         }
                     }
                 });
@@ -157,6 +165,10 @@ public final class QuickSettingsActivity extends Activity {
         super.onResume();
         if (curtainController != null) {
             curtainController.onResume();
+        }
+        if (backedByHomeCurtain && (curtainController == null || !curtainController.isBusy())) {
+            backedByHomeCurtain = false;
+            MainActivity.releasePausedOverlayCurtain();
         }
         if (panel != null && (curtainController == null || !curtainController.isBusy())) {
             panel.setVisibility(View.VISIBLE);
@@ -175,21 +187,22 @@ public final class QuickSettingsActivity extends Activity {
         String btTitle = getConnectedBluetoothDeviceTitle();
 
         addRow(rows, R.drawable.ic_settings, getString(R.string.tv_settings),
-                SystemSettings.intent(this, Settings.ACTION_SETTINGS));
+                SystemSettings.intent(this, Settings.ACTION_SETTINGS), true);
         addRow(rows, R.drawable.ic_picture, picTitle,
-                SystemSettings.intent(this, Settings.ACTION_DISPLAY_SETTINGS));
+                SystemSettings.intent(this, Settings.ACTION_DISPLAY_SETTINGS), false);
         addRow(rows, R.drawable.ic_sound, soundTitle,
-                SystemSettings.intent(this, Settings.ACTION_SOUND_SETTINGS));
+                SystemSettings.intent(this, Settings.ACTION_SOUND_SETTINGS), false);
         addRow(rows, R.drawable.ic_wifi, getString(R.string.quick_network),
-                SystemSettings.intent(this, Settings.ACTION_WIFI_SETTINGS));
+                SystemSettings.intent(this, Settings.ACTION_WIFI_SETTINGS), true);
         addRow(rows, R.drawable.ic_bluetooth, btTitle,
-                SystemSettings.bluetoothSettingsIntent(this));
+                SystemSettings.bluetoothSettingsIntent(this), true);
         addRow(rows, R.drawable.ic_apps, getString(R.string.quick_apps),
-                SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+                SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS), true);
         addRow(rows, R.drawable.ic_home_settings, getString(R.string.launcher_settings),
                 new Intent(this, MainActivity.class)
                         .setAction(MainActivity.ACTION_LAUNCHER_SETTINGS)
-                        .putExtra(LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, true));
+                        .putExtra(LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, true),
+                true);
 
         if (!panelEntered) {
             panelEntered = true;
@@ -251,6 +264,12 @@ public final class QuickSettingsActivity extends Activity {
         LauncherMotion.clearWindowTransition(this);
     }
 
+    private void finishForCurtainHandoff() {
+        // Theme.TvHome.QuickSettings already sets windowAnimationStyle=@null; omitting clearWindowTransition
+        // avoids clobbering the incoming target's pending curtain open transition on cold launches.
+        super.finish();
+    }
+
     /** Anything else taking the screen (Home, an app, a screensaver) closes the panel. */
     @Override
     protected void onPause() {
@@ -271,7 +290,8 @@ public final class QuickSettingsActivity extends Activity {
         }
         if (launchingTarget && !isFinishing()) {
             launchingTarget = false;
-            finish();
+            backedByHomeCurtain = false;
+            finishForCurtainHandoff();
         }
     }
 
@@ -283,18 +303,33 @@ public final class QuickSettingsActivity extends Activity {
         }
     }
 
-    private void addRow(LinearLayout rows, int icon, CharSequence title, Intent target) {
+    private void addRow(LinearLayout rows, int icon, CharSequence title, Intent target, boolean animateOpen) {
         View row = getLayoutInflater().inflate(R.layout.item_quick_setting, rows, false);
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(icon);
         ((TextView) row.findViewById(R.id.title)).setText(title);
         row.setOnClickListener(v -> {
             Intent launchIntent = new Intent(target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (!animateOpen) {
+                try {
+                    startActivity(launchIntent);
+                } catch (ActivityNotFoundException | SecurityException e) {
+                    Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+                }
+                finish();
+                return;
+            }
             boolean handoffToLauncher = launchIntent.getBooleanExtra(
                     LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, false);
             AppAdapter.LaunchCommit commit = curtainApplied -> {
                 if (curtainApplied && depthDelegate != null) {
                     depthDelegate.commitHide();
                 }
+                boolean backed = false;
+                if (curtainApplied && !handoffToLauncher) {
+                    backed = MainActivity.holdCurtainForPausedOverlayLaunch(
+                            curtainController != null ? curtainController.lastSettings() : null);
+                }
+                backedByHomeCurtain = backed;
                 try {
                     startActivity(launchIntent);
                     launchingTarget = curtainApplied;
@@ -311,6 +346,10 @@ public final class QuickSettingsActivity extends Activity {
                     }
                     return true;
                 } catch (ActivityNotFoundException | SecurityException e) {
+                    if (backed) {
+                        MainActivity.releasePausedOverlayCurtain();
+                    }
+                    backedByHomeCurtain = false;
                     launchingTarget = false;
                     Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
                     if (!curtainApplied) finish();

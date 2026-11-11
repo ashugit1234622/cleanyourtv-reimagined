@@ -159,5 +159,17 @@ public class LauncherMotionTest {
         assertEquals(184f / 1920f, pillPose.startScaleX, 0.0001f);
         assertEquals(42f / 1080f, pillPose.startScaleY, 0.0001f);
     }
+
+    @Test
+    public void translucentOverlayDelayRespectsHomeBackingAndColdStarts() {
+        assertEquals(480L, LaunchCurtainController.translucentOverlayFinishDelayMs(null, true));
+        assertEquals(2000L, LaunchCurtainController.translucentOverlayFinishDelayMs(null, false));
+        AppLaunchSettings slow = AppLaunchSettings.fromValues(
+                true, AppLaunchSettings.SPEED_SLOW, AppLaunchSettings.EASING_IOS_IN_OUT,
+                true, AppLaunchSettings.DEPTH_MEDIUM, true, AppLaunchSettings.REVEAL_ZOOM_FADE);
+        assertEquals(Math.max(480L, slow.revealDurationMs() + 140L),
+                LaunchCurtainController.translucentOverlayFinishDelayMs(slow, true));
+        assertTrue(LaunchCurtainController.translucentOverlayFinishDelayMs(slow, false) >= 2000L);
+    }
 }
 

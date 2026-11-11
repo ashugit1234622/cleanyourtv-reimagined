@@ -15,8 +15,8 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 /**
- * Shared iOS-style launch curtain animator for tiles, header pills, popup menu rows, Quick Settings
- * options, and Launcher Settings sub-screens.
+ * Shared iOS-style launch curtain animator for tiles, header pills, popup menu rows, and Quick Settings
+ * options.
  *
  * <p>Expands a rounded-corner {@code #FF000000} sheet (plus captured artwork when eligible) from the
  * clicked control's bounds to fullscreen while optionally receding the host content in depth, holds
@@ -61,6 +61,24 @@ final class LaunchCurtainController {
 
         default void onTranslucentFinish() {
         }
+
+        default long translucentFinishDelayMs(AppLaunchSettings cfg) {
+            return defaultTranslucentFinishDelayMs(cfg);
+        }
+    }
+
+    static long defaultTranslucentFinishDelayMs(AppLaunchSettings cfg) {
+        return translucentOverlayFinishDelayMs(cfg, true);
+    }
+
+    static long translucentOverlayFinishDelayMs(AppLaunchSettings cfg, boolean backedByHomeCurtain) {
+        long reveal = cfg != null ? cfg.revealDurationMs() : 340L;
+        if (backedByHomeCurtain) {
+            return Math.max(480L, reveal + 140L);
+        }
+        // Opened over another app rather than Home: hold the curtain long enough for cold-start
+        // settings pages to finish initializing before tearing down the overlay.
+        return Math.max(2000L, reveal + 1400L);
     }
 
     /** Single-container background depth delegate for settings screens and overlay panels. */
@@ -350,6 +368,20 @@ final class LaunchCurtainController {
      * {@code onResume} cleanup that fires before the target activity pauses this host.
      */
     void holdForHandoff(AppLaunchSettings launchCfg) {
+        activateSolidCurtain(launchCfg, true, false);
+    }
+
+    /**
+     * Holds the host curtain solid opaque black while a translucent overlay above it (Quick Settings)
+     * launches another window. Unlike {@link #holdForHandoff}, the host is already paused and unfocused,
+     * so returning later via Back/Home clears the curtain normally on {@code onResume} / focus return.
+     */
+    void holdForPausedOverlayLaunch(AppLaunchSettings launchCfg) {
+        activateSolidCurtain(launchCfg, false, true);
+    }
+
+    private void activateSolidCurtain(AppLaunchSettings launchCfg,
+                                      boolean skipNextResume, boolean markLostFocus) {
         lastSettings = launchCfg != null ? launchCfg : AppLaunchSettings.load(activity);
         if (!host.animationsEnabled() || host.reducedMotionEnabled() || !lastSettings.enabled
                 || curtain == null) {
@@ -364,8 +396,8 @@ final class LaunchCurtainController {
 
         pending = false;
         committed = true;
-        lostFocus = false;
-        skipNextResumeCleanup = true;
+        lostFocus = markLostFocus;
+        skipNextResumeCleanup = skipNextResume;
 
         curtain.animate().setListener(null).cancel();
         curtain.setLayerType(View.LAYER_TYPE_NONE, null);
@@ -422,7 +454,7 @@ final class LaunchCurtainController {
         handler.removeCallbacks(clearLaunchPulse);
         if (translucentHost && committed) {
             lostFocus = true;
-            long delayMs = Math.max(480L, lastSettings.revealDurationMs() + 140L);
+            long delayMs = Math.max(480L, host.translucentFinishDelayMs(lastSettings));
             handler.removeCallbacks(translucentFinishFallback);
             handler.postDelayed(translucentFinishFallback, delayMs);
             return;

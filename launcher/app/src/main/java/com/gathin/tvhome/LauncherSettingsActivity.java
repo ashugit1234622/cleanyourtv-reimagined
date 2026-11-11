@@ -8,10 +8,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
-import android.view.KeyEvent;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.LinearLayout;
@@ -60,10 +57,6 @@ public final class LauncherSettingsActivity extends Activity {
     private boolean advancedEffects;
     private boolean reducedMotion;
     private boolean wallpaperRotation;
-    private boolean resumed;
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private LaunchCurtainController curtainController;
-    private LaunchCurtainController.PanelDepthDelegate depthDelegate;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -192,7 +185,7 @@ public final class LauncherSettingsActivity extends Activity {
             }
         });
         appLaunchChoice = findViewById(R.id.appLaunchChoice);
-        appLaunchChoice.setOnClickListener(v -> open(new Intent(this, AppLaunchSettingsActivity.class), v));
+        appLaunchChoice.setOnClickListener(v -> open(new Intent(this, AppLaunchSettingsActivity.class)));
         appLaunchChoice.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
             if ((keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
@@ -214,7 +207,7 @@ public final class LauncherSettingsActivity extends Activity {
             return false;
         });
         introSettingsChoice = findViewById(R.id.introSettingsChoice);
-        introSettingsChoice.setOnClickListener(v -> open(new Intent(this, IntroSettingsActivity.class), v));
+        introSettingsChoice.setOnClickListener(v -> open(new Intent(this, IntroSettingsActivity.class)));
         introSettingsChoice.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
             if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
@@ -262,61 +255,11 @@ public final class LauncherSettingsActivity extends Activity {
             refresh();
         });
         findViewById(R.id.defaultHomeChoice).setOnClickListener(v ->
-                open(new Intent(this, HomeSettingsActivity.class), v));
+                open(new Intent(this, HomeSettingsActivity.class)));
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
-                open(SystemSettings.intent(this, Settings.ACTION_SETTINGS), v));
+                open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
         findViewById(R.id.phoneBridgeChoice).setOnClickListener(v ->
-                open(new Intent(this, com.gathin.tvhome.bridge.BridgeSettingsActivity.class), v));
-        View launchRoot = findViewById(R.id.launchRoot);
-        View contentScroll = findViewById(R.id.launcherSettingsContent);
-        depthDelegate = new LaunchCurtainController.PanelDepthDelegate(contentScroll, false);
-        curtainController = new LaunchCurtainController(
-                this,
-                handler,
-                launchRoot,
-                findViewById(R.id.launchCurtain),
-                findViewById(R.id.launchCurtainArt),
-                new LaunchCurtainController.Host() {
-                    @Override
-                    public boolean animationsEnabled() {
-                        return animations;
-                    }
-
-                    @Override
-                    public boolean reducedMotionEnabled() {
-                        return reducedMotion;
-                    }
-
-                    @Override
-                    public boolean isResumed() {
-                        return resumed;
-                    }
-
-                    @Override
-                    public boolean hasWindowFocus() {
-                        return LauncherSettingsActivity.this.hasWindowFocus();
-                    }
-
-                    @Override
-                    public void onBeforeCurtainExpand(View sourceView, int rootW, int rootH, AppLaunchSettings cfg) {
-                        depthDelegate.prepare(rootW, rootH, cfg);
-                    }
-
-                    @Override
-                    public void onCurtainDepthProgress(float easedProgress, AppLaunchSettings cfg) {
-                        depthDelegate.update(easedProgress, cfg);
-                    }
-
-                    @Override
-                    public void onRestoreBackground() {
-                        depthDelegate.restore();
-                    }
-
-                    @Override
-                    public boolean shouldCaptureArtBitmap(View sourceView) {
-                        return false;
-                    }
-                });
+                open(new Intent(this, com.gathin.tvhome.bridge.BridgeSettingsActivity.class)));
         refresh();
         if (config.launcherSettingsButton) reorderChoice.requestFocus();
         else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
@@ -325,44 +268,7 @@ public final class LauncherSettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        resumed = true;
-        if (curtainController != null) curtainController.onResume();
         refresh();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        resumed = false;
-        if (curtainController != null) curtainController.onPause();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (curtainController != null) curtainController.onStop();
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (curtainController != null) curtainController.onWindowFocusChanged(hasFocus);
-    }
-
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        int code = event != null ? event.getKeyCode() : 0;
-        boolean isOk = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER;
-        if (curtainController != null && curtainController.handleDispatchKeyEvent(event, isOk)) {
-            return true;
-        }
-        return super.dispatchKeyEvent(event);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (curtainController != null) curtainController.destroy();
     }
 
     private void reverseRow(TextView[] views) {
@@ -589,27 +495,12 @@ public final class LauncherSettingsActivity extends Activity {
         }
     }
 
-    private void open(Intent intent, View sourceView) {
-        AppAdapter.LaunchCommit commit = curtainApplied -> {
-            try {
-                startActivity(intent);
-                if (curtainApplied) {
-                    AppLaunchSettings settings = curtainController != null
-                            ? curtainController.lastSettings() : AppLaunchSettings.load(this);
-                    LauncherMotion.applyCurtainOpenTransition(this, animations, reducedMotion, settings);
-                } else {
-                    LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
-                }
-                return true;
-            } catch (ActivityNotFoundException | SecurityException e) {
-                Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
-                return false;
-            }
-        };
-        if (curtainController != null) {
-            curtainController.launch(sourceView, null, true, commit);
-        } else {
-            commit.run(false);
+    private void open(Intent intent) {
+        try {
+            startActivity(intent);
+            LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
         }
     }
 
