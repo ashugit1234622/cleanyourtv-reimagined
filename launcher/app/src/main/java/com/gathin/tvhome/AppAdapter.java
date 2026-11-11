@@ -63,6 +63,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void onLibraryUp();
         /** A tile whose launch_actions entry is "input:<id>": switch to that TV input instead of opening an app. */
         void onOpenInput(String inputId);
+        /**
+         * Runs the local black-curtain expand animation from {@code card} and invokes {@code commit}
+         * once fullscreen black is reached (or immediately when reduced motion / no animations).
+         */
+        void onLaunchTile(View card, LaunchCommit commit);
+        /** True while tile reorder mode is active so press-dip does not conflict with held moves. */
+        boolean isReordering();
+    }
+
+    /** Callback executed when the launch animation commits the underlying activity start. */
+    interface LaunchCommit {
+        boolean run(boolean curtainApplied);
     }
 
     static final class Entry {
@@ -455,6 +467,24 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
     }
 
+    private static final String PAYLOAD_DOCK_EDGE = "dock_edge";
+
+    @Override
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, @NonNull List<Object> payloads) {
+        if (payloads.contains(PAYLOAD_DOCK_EDGE) && !isLibraryAt(position)) {
+            Holder h = (Holder) holder;
+            Entry e = items.get(position);
+            if (e.kind != Entry.EMPTY) {
+                boolean dockKind = DockSlots.inDockRow(dockRow, singleRow, position, dockSize);
+                h.inDock = dockKind;
+                h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
+                h.name.setAlpha(h.card.isFocused() ? 1f : restNameAlpha);
+                return;
+            }
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
     @Override
     @SuppressWarnings("deprecation")
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
@@ -508,7 +538,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
-        h.card.setOnClickListener(v -> launch(e));
+        h.card.setOnClickListener(v -> launch(e, v));
         h.card.setOnLongClickListener(v -> {
             if (tileMenu) {
                 int pos = h.getBindingAdapterPosition();
@@ -525,12 +555,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
-    /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
-    @SuppressWarnings("deprecation")
-    private void launch(Entry e) {
+    /** Opens the tile's activity by explicit component, running the local curtain expand before startActivity. */
+    private void launch(Entry e, View sourceCard) {
         if (e.kind == Entry.HOME_SETTINGS) {
-            ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            Intent homeIntent = new Intent(ctx, HomeSettingsActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            dispatchLaunch(sourceCard, homeIntent, false, null, e.label);
             return;
         }
         Intent i = new Intent(Intent.ACTION_MAIN)
@@ -551,14 +581,34 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Intent byAction = LaunchActions.intent(e.pkg, action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             if (ctx.getPackageManager().resolveActivity(byAction, 0) != null) i = byAction;
         }
+        dispatchLaunch(sourceCard, i, true, e.pkg, e.label);
+    }
+
+    private void dispatchLaunch(View sourceCard, Intent intent, boolean recordLastOpened, String pkg, String label) {
+        LaunchCommit commit = curtainApplied -> startTileActivity(intent, curtainApplied, recordLastOpened, pkg, label);
+        if (listener != null) {
+            listener.onLaunchTile(sourceCard, commit);
+        } else {
+            commit.run(false);
+        }
+    }
+
+    private boolean startTileActivity(Intent intent, boolean curtainApplied,
+                                      boolean recordLastOpened, String pkg, String label) {
         try {
-            ctx.startActivity(i);
-            if (cinematic) LastOpened.record(ctx, e.pkg);
-            if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
-                ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
+            ctx.startActivity(intent);
+            if (ctx instanceof Activity) {
+                if (curtainApplied) {
+                    LauncherMotion.applyCurtainOpenTransition((Activity) ctx, animations, reducedMotion);
+                } else {
+                    LauncherMotion.applySubScreenOpenTransition((Activity) ctx, animations, reducedMotion);
+                }
             }
+            if (recordLastOpened && cinematic && pkg != null) LastOpened.record(ctx, pkg);
+            return true;
         } catch (Exception ex) {
-            Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
+            Toast.makeText(ctx, ctx.getString(R.string.cant_open, label), Toast.LENGTH_SHORT).show();
+            return false;
         }
     }
 
@@ -629,10 +679,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (from == to || from < 0 || to < 0 || from >= movableCount() || to >= movableCount()) return;
         items.add(to, items.remove(from));
         notifyItemMoved(from, to);
-        // The dock row hides names by position: rebind the tiles whose side of the dock edge changed.
+        // The dock row hides names by position: update name visibility in-place without rebinding icons.
         if (from < dockSize || to < dockSize) {
             int lo = Math.min(from, to), hi = Math.max(from, to);
-            notifyItemRangeChanged(lo, hi - lo + 1);
+            notifyItemRangeChanged(lo, hi - lo + 1, PAYLOAD_DOCK_EDGE);
         }
     }
 
@@ -916,6 +966,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
 
+        private float focusedScale() {
+            return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
+        }
+
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
                boolean reducedMotion, float restNameAlpha, boolean overshoot) {
             super(v);
@@ -942,6 +996,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             card.setClipToOutline(true);
 
             card.setOnKeyListener((view, keyCode, event) -> {
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
+                        || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
+                    if (animations && !reducedMotion && (listener == null || !listener.isReordering())) {
+                        float base = focusedScale();
+                        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                            LauncherMotion.pressDip(view, base, animations, reducedMotion);
+                        } else if (event.getAction() == KeyEvent.ACTION_UP && view.isFocused()) {
+                            LauncherMotion.restoreFocusScale(view, base, animations, reducedMotion);
+                        }
+                    }
+                    return false;
+                }
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN
                         && keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
@@ -953,8 +1019,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.animate().cancel();
                 banner.animate().cancel();
                 name.animate().cancel();
-                float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
-                float s = focused ? scale : 1f;
+                float s = focused ? focusedScale() : 1f;
                 if (!animations) {
                     view.setScaleX(1f);
                     view.setScaleY(1f);

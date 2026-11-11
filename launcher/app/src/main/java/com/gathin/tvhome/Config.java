@@ -45,6 +45,7 @@ final class Config {
     static final String ROWS_BELOW_DOCK_KEY = "rows_below_dock";
     static final String WALLPAPER_CHOICE_KEY = "wallpaper_choice";
     static final String WALLPAPER_ROTATION_KEY = "wallpaper_rotation";
+    static final String IDLE_SHOWCASE_KEY = "idle_showcase_seconds";
     static final String DOCK_OPACITY_KEY = "dock_opacity";
     static final String CLOCK_FORMAT_KEY = "clock_format";
     /**
@@ -247,6 +248,8 @@ final class Config {
     final boolean fadeRows;
     /** Minutes Home may sit untouched before the clock screensaver (config.xml, home_idle_clock_minutes); 0 is off. */
     final int homeIdleClockMinutes;
+    /** Seconds Home may sit untouched before fading UI into Idle Wallpaper Showcase (config.xml, idle_showcase_seconds); 0 is off. */
+    final int idleShowcaseSeconds;
     /** The dock band as light frosted glass like the pills (config.xml, dock_glass); false keeps the solid band. */
     final boolean dockGlass;
     /** The dock band's padding equals the gap between its tiles (config.xml, dock_even_padding); false keeps the fixed padding. */
@@ -307,7 +310,7 @@ final class Config {
                    int[] settingsKeycodes, boolean settingsKeyPanel, boolean restoreKeyServices, boolean wallpaperEnabled, File wallpaper, List<File> wallpapers,
                    int wallpaperRotationMinutes, int wallpaperDim, int dockOpacity, String wallpaperOrder, boolean overlayApplied,
                    Festival festival, int[] inputKeycodes, List<String> appKeys, String stockHomeRedirect,
-                   List<RaceWeekend.Race> raceCalendar, boolean cinematicHome, boolean ambientGlow, boolean appGlow, boolean fadeRows, int homeIdleClockMinutes,
+                   List<RaceWeekend.Race> raceCalendar, boolean cinematicHome, boolean ambientGlow, boolean appGlow, boolean fadeRows, int homeIdleClockMinutes, int idleShowcaseSeconds,
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
@@ -405,6 +408,7 @@ final class Config {
         this.appGlow = appGlow;
         this.fadeRows = fadeRows;
         this.homeIdleClockMinutes = homeIdleClockMinutes;
+        this.idleShowcaseSeconds = idleShowcaseSeconds;
         this.dockGlass = dockGlass;
         this.dockEvenPadding = dockEvenPadding;
         this.dockBand = dockBand;
@@ -540,6 +544,7 @@ final class Config {
         boolean appGlow = res.getBoolean(R.bool.app_glow);
         boolean fadeRows = res.getBoolean(R.bool.fade_rows);
         int idleClockMinutes = res.getInteger(R.integer.home_idle_clock_minutes);
+        int idleShowcaseSeconds = res.getInteger(R.integer.idle_showcase_seconds);
         boolean keyFilter = res.getBoolean(R.bool.key_filter);
         boolean gamepadPassthrough = res.getBoolean(R.bool.gamepad_passthrough);
         boolean consumeVolumeKeys = res.getBoolean(R.bool.consume_volume_keys);
@@ -662,6 +667,7 @@ final class Config {
             appGlow = bool(json, "app_glow", appGlow);
             fadeRows = bool(json, "fade_rows", fadeRows);
             idleClockMinutes = integer(json, "home_idle_clock_minutes", idleClockMinutes, 0, 1440);
+            idleShowcaseSeconds = integer(json, IDLE_SHOWCASE_KEY, idleShowcaseSeconds, 0, 3600);
             keyFilter = bool(json, "key_filter", keyFilter);
             gamepadPassthrough = bool(json, "gamepad_passthrough", gamepadPassthrough);
             consumeVolumeKeys = bool(json, "consume_volume_keys", consumeVolumeKeys);
@@ -707,6 +713,9 @@ final class Config {
         if (chosenColumns >= 4 && chosenColumns <= 7) columns = chosenColumns;
         int chosenRows = choices.getInt(ROWS_BELOW_DOCK_KEY, rowsBelow);
         if (chosenRows >= 0 && chosenRows <= 3) rowsBelow = chosenRows;
+        if (choices.contains(IDLE_SHOWCASE_KEY)) {
+            idleShowcaseSeconds = Math.max(0, Math.min(3600, choices.getInt(IDLE_SHOWCASE_KEY, idleShowcaseSeconds)));
+        }
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
         File internalWallpaper = new File(ctx.getFilesDir(), WALLPAPER_NAME);
@@ -772,7 +781,7 @@ final class Config {
                 Math.max(0, Math.min(100, skyIntensity)), settingsKeycodes, settingsKeyPanel, restoreKeyServices, wallpaperEnabled, wallpaper,
                 wallpapers, rotationMinutes, wallpaperDim, dockOpacity, wallpaperOrder, applied, festival, inputKeycodes, appKeys, stockHomeRedirect,
                 json == null ? Collections.emptyList() : raceCalendar(json), cinematic, ambientGlow, appGlow, fadeRows,
-                Math.max(0, idleClockMinutes), keyFilter, dockGlass, glowStyle, wallpaperCaptions, handleViewInputs, tileMenu, dockEvenPadding,
+                Math.max(0, idleClockMinutes), Math.max(0, idleShowcaseSeconds), keyFilter, dockGlass, glowStyle, wallpaperCaptions, handleViewInputs, tileMenu, dockEvenPadding,
                 dockBand, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough,
                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,

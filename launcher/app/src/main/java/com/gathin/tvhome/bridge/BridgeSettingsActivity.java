@@ -12,6 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.gathin.tvhome.LauncherMotion;
 import com.gathin.tvhome.R;
 import com.gathin.tvhome.bridge.qr.QrBitmapHelper;
 
@@ -179,5 +180,11 @@ public class BridgeSettingsActivity extends Activity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public void finish() {
+        super.finish();
+        LauncherMotion.applySubScreenCloseTransition(this);
     }
 }

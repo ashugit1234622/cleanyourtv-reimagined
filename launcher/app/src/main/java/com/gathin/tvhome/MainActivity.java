@@ -1,5 +1,7 @@
 package com.gathin.tvhome;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
@@ -22,6 +24,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
@@ -62,12 +65,15 @@ import androidx.core.content.ContextCompat;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.SoundEffectConstants;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.animation.AnimationUtils;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LayoutAnimationController;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -82,6 +88,7 @@ import androidx.annotation.NonNull;
 import androidx.dynamicanimation.animation.FloatPropertyCompat;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
+import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -138,6 +145,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Back on Home opens ClockActivity (config.xml, back_opens_clock). */
     private boolean backOpensClock;
     private final Runnable showIdleClock = () -> startActivity(new Intent(this, ClockActivity.class));
+    private IdleShowcaseController idleShowcase;
     private String liveTvAction;
     private String liveTvInputId;
     /** The app library is on (config.xml, app_library): only then can the tile menu take an app off Home. */
@@ -192,6 +200,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** config.xml glow_snap: the glow takes a new colour in one frame instead of the dip-and-fade. */
     private boolean glowSnap;
     private boolean heroShown;
+    private int lastHeroPosition = -1;
+    private float pendingHeroRestY = Float.NaN;
+    private HeaderFocusIndicator headerFocus;
+    private boolean pausedBefore;
+    private View launchCurtain;
+    private ImageView launchCurtainArt;
+    private View homeContent;
+    private Bitmap launchCurtainBitmap;
+    private ValueAnimator launchCurtainAnimator;
+    private float launchCurtainCornerPx;
+    private float preLaunchHeroAlpha = 1f;
+    private float preLaunchRaceAlpha = 1f;
+    private float preLaunchGlassAlpha = 0f;
+    private boolean launchHeroDimApplied;
+    private boolean launchRaceDimApplied;
+    private View launchingCard;
+    private boolean launchDimApplied;
+    private boolean glassScaledForLaunch;
+    private boolean launchCurtainPending;
+    private boolean launchCurtainCommitted;
+    private boolean launchCurtainLostFocus;
+    private int launchCurtainGen;
+    private AppLaunchSettings appLaunchSettings = AppLaunchSettings.defaults();
+    private static final long DEAD_LAUNCH_TIMEOUT_MS = 6000L;
+    private final Runnable clearLaunchPulse = this::settleLaunchPulseIfResumed;
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
@@ -560,6 +593,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         animations = cfg.animations;
         advancedEffects = cfg.animations && cfg.advancedEffects;
         reducedMotion = cfg.reducedMotion;
+        appLaunchSettings = AppLaunchSettings.load(this);
         dockRow = cfg.dockRow;
         singleRow = cfg.singleRow;
         focusOvershoot = cfg.focusOvershoot;
@@ -597,6 +631,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass = findViewById(R.id.glass);
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
+        homeContent = findViewById(R.id.homeContent);
+        launchCurtain = findViewById(R.id.launchCurtain);
+        launchCurtainArt = findViewById(R.id.launchCurtainArt);
+        if (launchCurtainArt != null) {
+            launchCurtainArt.forceHasOverlappingRendering(false);
+        }
+        if (launchCurtain != null) {
+            launchCurtain.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    int w = view.getWidth();
+                    int h = view.getHeight();
+                    if (w <= 0 || h <= 0) return;
+                    if (launchCurtainCornerPx < 0.5f) {
+                        outline.setRect(0, 0, w, h);
+                    } else {
+                        outline.setRoundRect(0, 0, w, h, launchCurtainCornerPx);
+                    }
+                }
+            });
+            launchCurtain.setClipToOutline(true);
+        }
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
@@ -761,6 +817,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
             @Override
             public void onChildViewAttachedToWindow(@NonNull View v) {
+                v.animate().cancel();
                 v.setAlpha(tileAlpha(grid.getChildAdapterPosition(v)));
             }
 
@@ -921,9 +978,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         View btnSettings = findViewById(R.id.btnSettings);
-        btnInputs.setOnClickListener(v -> showInputs());
-        btnWifi.setOnClickListener(v -> openNetworkPill());
-        btnVpn.setOnClickListener(v -> openVpnPill());
+        btnInputs.setOnClickListener(v -> {
+            if (headerFocus != null) headerFocus.pulsePress();
+            showInputs();
+        });
+        btnWifi.setOnClickListener(v -> {
+            if (headerFocus != null) headerFocus.pulsePress();
+            openNetworkPill();
+        });
+        btnVpn.setOnClickListener(v -> {
+            if (headerFocus != null) headerFocus.pulsePress();
+            openVpnPill();
+        });
         btnWifi.setOnLongClickListener(v -> {
             open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
             return true;
@@ -934,18 +1000,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ((TextView) btnSettings).setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_home_settings_pill, 0, 0, 0);
         }
         btnSettings.setOnClickListener(v -> {
-            if (launcherSettingsButton) startActivityForResult(
-                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
+            if (headerFocus != null) headerFocus.pulsePress();
+            if (launcherSettingsButton) openLauncherSettings();
             else open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class) : SystemSettings.quickSettingsIntent(this));
         });
         btnReorder = findViewById(R.id.btnReorder);
-        btnReorder.setOnClickListener(v -> toggleReorder());
+        btnReorder.setOnClickListener(v -> {
+            if (headerFocus != null) headerFocus.pulsePress();
+            toggleReorder();
+        });
         btnReorder.setVisibility(cfg.reorderButton ? View.VISIBLE : View.GONE);
         if (!cfg.showNetworkPill) btnWifi.setVisibility(View.GONE);
         showInputsPill = cfg.showInputsPill;
         showInputsMenuRow = cfg.showInputsPill;
         btnLibraryTop = findViewById(R.id.btnLibraryTop);
         btnLibraryTop.setOnClickListener(v -> {
+            if (headerFocus != null) headerFocus.pulsePress();
             onLibraryRequested();
             libraryFromTopBar = true;   // closing it goes back to this button, not to the pill after the last row
         });
@@ -1027,7 +1097,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnReorder.setOnKeyListener(pillKeys);
         btnLibraryTop.setOnKeyListener(pillKeys);
         for (View button : topAppButtons) button.setOnKeyListener(pillKeys);
-        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        headerFocus = findViewById(R.id.headerFocusIndicator);
         if (headerFocus != null) {
             headerFocus.setReducedMotion(reducedMotion);
         }
@@ -1065,7 +1135,42 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (!onTopBar && headerFocus != null) {
                 headerFocus.onFocusLost();
             }
+            if (onTopBar && !onTile && wallpaperPlayer != null) {
+                wallpaperPlayer.setFocusParallax(0f);
+            }
         });
+
+        List<View> showcaseHideButtons = new ArrayList<>();
+        showcaseHideButtons.add(btnReorder);
+        showcaseHideButtons.add(btnLibraryTop);
+        showcaseHideButtons.addAll(topAppButtons);
+        idleShowcase = new IdleShowcaseController(
+                cfg.idleShowcaseSeconds,
+                animations,
+                reducedMotion,
+                density,
+                new IdleShowcaseController.HostState() {
+                    @Override public boolean isResumed() { return resumed; }
+                    @Override public boolean isIntroPlaying() { return bootIntroOverlay != null && bootIntroOverlay.isPlaying(); }
+                    @Override public boolean isReordering() { return reordering; }
+                    @Override public boolean hasOpenPopup() { return openPopup != null; }
+                    @Override public boolean hasAppLibrary() { return appLibrary != null; }
+                    @Override public boolean hasCardPrompt() { return cardPrompt != null; }
+                    @Override public View getFocusedView() { return getCurrentFocus(); }
+                    @Override public void onShowcaseWoke() {
+                        if (resumed) updateWifiLabel();
+                    }
+                },
+                wallpaperPlayer,
+                headerFocus,
+                clockBlock,
+                grid,
+                java.util.Arrays.asList(clockBlock, stats, racePanel, hero, heroArt, findViewById(R.id.heroScrim), ambient, glass, grid),
+                java.util.Arrays.asList((TextView) btnInputs, btnWifi, btnVpn, (TextView) btnSettings),
+                showcaseHideButtons,
+                btnWifi,
+                btnVpn
+        );
 
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
         packageFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
@@ -1253,7 +1358,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         prefs.edit().putLong(BootIntro.KEY_LAST_INTRO_TIME, now).commit();
         android.util.Log.d("BootIntro", "wake intro: " + decision.reason
                 + ", gap ok (sleep=" + (stoppedDurationMs / 1000) + "s >= " + (gapMs / 1000) + "s)");
-        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
         if (headerFocus != null) {
             headerFocus.setSuppressed(true);
         }
@@ -1269,10 +1373,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void triggerBootIntro(boolean isWake, int forcedMessageIndex, String forcedAnimation, boolean isPreview, String wakeReason, Intent debugIntent) {
+        cancelReturnSettle();
+        resetLaunchPulse();
         if (bootIntroOverlay != null) {
             bootIntroOverlay.skip();
         }
-        View homeContent = findViewById(R.id.homeContent);
+        if (homeContent == null) homeContent = findViewById(R.id.homeContent);
         if (homeContent == null || grid == null || root == null) return;
 
         Config cfg = Config.load(this);
@@ -1452,13 +1558,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .commit();
             if (previewFromSettings) {
                 previewFromSettings = false;
-                Intent backIntent = new Intent(this, IntroSettingsActivity.class);
-                backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                backIntent.putExtra(IntroSettingsActivity.EXTRA_FOCUS_PREVIEW, true);
-                startActivity(backIntent);
+                previewTransitionToIntroSettings();
             } else {
                 focusFirstDockTile();
             }
+            if (idleShowcase != null) idleShowcase.scheduleIfEligible();
         });
     }
 
@@ -1527,10 +1631,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return true;
     }
 
+    private void previewTransitionToIntroSettings() {
+        Intent backIntent = new Intent(this, IntroSettingsActivity.class);
+        backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        backIntent.putExtra(IntroSettingsActivity.EXTRA_FOCUS_PREVIEW, true);
+        startActivity(backIntent);
+        LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+    }
+
+    private void openLauncherSettings() {
+        startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
+        LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+    }
+
     private boolean openLauncherSettingsIfAsked(Intent intent) {
         if (intent == null || !ACTION_LAUNCHER_SETTINGS.equals(intent.getAction())) return false;
         setIntent(new Intent(Intent.ACTION_MAIN));
-        startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
+        openLauncherSettings();
         return true;
     }
 
@@ -1580,6 +1697,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLibraryIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (launchCurtainPending || launchCurtainCommitted) {
+            onResumeLaunchCleanup();
+        }
         if (gameDay != null && !stopped) gameDay.read();
         grid.scrollToPosition(0);
         lastFocused = 0;
@@ -1614,6 +1734,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        boolean returningToHome = pausedBefore;
+        pausedBefore = false;
+        onResumeLaunchCleanup();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1627,11 +1750,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
         restartIdleClock();
+        if (idleShowcase != null) idleShowcase.onResume();
         checkAndTriggerWakeIntro();
         promptsPaused = false;
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
-        switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
+        TileRefresh.Action refreshAction = tileRefresh.onResume(packagesChangedSinceRebuild());
+        switch (refreshAction) {
             case REBUILD:
                 tilesReady = false;
                 if (bootIntroOverlay != null && bootIntroOverlay.isPlaying() && !bootIntroOverlay.isRevealing()) {
@@ -1701,6 +1826,76 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             deviceMonitor.start(this::updateDeviceAccessories);
         }
         updateStatsView();
+        if (returningToHome && refreshAction != TileRefresh.Action.REBUILD
+                && animations && !reducedMotion
+                && (bootIntroOverlay == null || !bootIntroOverlay.isPlaying())
+                && !deferReloadAppsUntilReveal && openPopup == null
+                && (idleShowcase == null || !idleShowcase.isEngaged())) {
+            playReturnToHomeSettle();
+        }
+    }
+
+    private void playReturnToHomeSettle() {
+        DecelerateInterpolator ease = new DecelerateInterpolator(1.7f);
+        if (wallpaperPlayer != null) {
+            wallpaperPlayer.playReturnSettle();
+        }
+        View leftBlock = findViewById(R.id.leftBlock);
+        View topButtons = findViewById(R.id.topButtons);
+        if (leftBlock != null && leftBlock.getVisibility() == View.VISIBLE && leftBlock.getAlpha() > 0f) {
+            leftBlock.animate().cancel();
+            leftBlock.setTranslationY(-6f * density);
+            leftBlock.animate().translationY(0f).setDuration(210L).setInterpolator(ease).start();
+        }
+        if (topButtons != null && topButtons.getVisibility() == View.VISIBLE && topButtons.getAlpha() > 0f) {
+            topButtons.animate().cancel();
+            topButtons.setTranslationY(-6f * density);
+            topButtons.animate().translationY(0f).setDuration(210L).setInterpolator(ease).start();
+        }
+        if (heroShown && hero.getAlpha() > 0.01f) {
+            hero.animate().setListener(null).cancel();
+            final float restY = Float.isNaN(pendingHeroRestY) ? hero.getY() : pendingHeroRestY;
+            pendingHeroRestY = restY;
+            hero.setY(restY + 6f * density);
+            hero.animate().y(restY).setDuration(210L).setInterpolator(ease)
+                    .withEndAction(() -> pendingHeroRestY = Float.NaN).start();
+        }
+        if (glassShown) {
+            glass.animate().cancel();
+            glass.setScaleX(1.032f);
+            glass.setScaleY(1.032f);
+            glass.animate().scaleX(1f).scaleY(1f).setDuration(210L).setInterpolator(ease).start();
+        }
+        View focused = grid.findFocus();
+        if (focused != null && focused.getId() == R.id.card) {
+            float rest = adapter.focusScale();
+            focused.animate().cancel();
+            focused.setScaleX(rest * 1.032f);
+            focused.setScaleY(rest * 1.032f);
+            focused.animate().scaleX(rest).scaleY(rest).setDuration(210L).setInterpolator(ease).start();
+        }
+    }
+
+    private void cancelReturnSettle() {
+        View leftBlock = findViewById(R.id.leftBlock);
+        View topButtons = findViewById(R.id.topButtons);
+        if (leftBlock != null) {
+            leftBlock.animate().cancel();
+            leftBlock.setTranslationY(0f);
+        }
+        if (topButtons != null) {
+            topButtons.animate().cancel();
+            topButtons.setTranslationY(0f);
+        }
+        if (hero != null && !Float.isNaN(pendingHeroRestY)) {
+            hero.animate().setListener(null).cancel();
+            hero.setY(pendingHeroRestY);
+            pendingHeroRestY = Float.NaN;
+        }
+        if (glass != null) {
+            glass.setScaleX(1f);
+            glass.setScaleY(1f);
+        }
     }
 
     /** Launcher settings' change count (Config.SETTINGS_REVISION_KEY); onResume rebuilds Home when it moved. */
@@ -1747,6 +1942,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *                 on a return to the same tiles it would only mark a change that didn't happen.
      */
     private void reloadApps(boolean animate, boolean rebuild, boolean entrance) {
+        if (idleShowcase != null && idleShowcase.isEngaged()) {
+            idleShowcase.exitImmediate();
+        }
         cancelPendingFocusScroll();
         RecyclerView.ViewHolder footer = grid.findViewHolderForAdapterPosition(adapter.appCount());
         final boolean restoreLibrary = adapter.isLibraryAt(adapter.appCount()) && footer != null
@@ -1760,6 +1958,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             glassShown = false;
             glass.setAlpha(0f);
             heroShown = false;
+            lastHeroPosition = -1;
             hero.setAlpha(0f);
             ambient.setAlpha(0f);
             heroArt.animate().cancel();
@@ -1850,6 +2049,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         restartIdleClock();
     }
 
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (idleShowcase != null && ev != null && ev.getAction() == MotionEvent.ACTION_DOWN) {
+            idleShowcase.onNonKeyInteraction();
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
     private void restartIdleClock() {
         root.removeCallbacks(showIdleClock);
         if (resumed && idleClockMs > 0) root.postDelayed(showIdleClock, idleClockMs);
@@ -1859,6 +2066,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        pausedBefore = true;
+        onPauseLaunchCleanup();
+        cancelReturnSettle();
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null && !pm.isInteractive()) wasNonInteractive = true;
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
@@ -1866,6 +2076,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RemoteKeys.release(this);
         cancelHoldOk();
         root.removeCallbacks(showIdleClock);
+        if (idleShowcase != null) idleShowcase.exitImmediate();
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
         stopAmbientAnimation();
@@ -1904,6 +2115,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         clockRefresh.stop();
         handler.removeCallbacks(clockCheck);
         stopped = true;
+        clearLaunchCurtainImmediate();
         tileRefresh.onStop();
     }
 
@@ -1918,6 +2130,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // RUNNING_LOW and CRITICAL also arrive while Home is visible when an accessibility service keeps the
         // process in the foreground; never blank the screen the owner is looking at.
         if (!MemoryTrimPolicy.shouldRelease(level, started)) return;
+        if (idleShowcase != null) idleShowcase.exitImmediate();
         adapter.clear();
         // Detach the adapter too: with Home stopped no layout pass runs, so the tile views (and the bitmaps
         // they hold) would stay attached until Home comes back. setAdapter(null) recycles them now.
@@ -1933,10 +2146,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            if (resumed && launchCurtainLostFocus && (launchCurtainPending || launchCurtainCommitted)) {
+                resetLaunchTilesAndDim();
+                fadeOutLaunchCurtainForResume();
+            }
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
         } else {
+            handler.removeCallbacks(clearLaunchPulse);
+            if (launchCurtainCommitted) {
+                launchCurtainLostFocus = true;
+            }
             cancelHoldOk();   // a dialog or another window took the remote while OK was held
         }
     }
@@ -1944,8 +2165,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        resetLaunchPulse();
         RemoteKeys.release(this);
         cancelHoldOk();
+        if (idleShowcase != null) idleShowcase.cancelTimer();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
         unregisterReceiver(bootIntroWakeReceiver);
@@ -2020,6 +2243,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         MainActivity act = activeInstance;
         if (act != null && act.wallpaperPlayer != null) {
             act.runOnUiThread(() -> {
+                if (act.idleShowcase != null) act.idleShowcase.wake(false);
                 if (forward) {
                     act.wallpaperPlayer.showNext();
                 } else {
@@ -2034,7 +2258,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public static boolean setWallpaper(String name) {
         MainActivity act = activeInstance;
         if (act != null && act.wallpaperPlayer != null) {
-            act.runOnUiThread(() -> act.wallpaperPlayer.showSpecific(name));
+            act.runOnUiThread(() -> {
+                if (act.idleShowcase != null) act.idleShowcase.wake(false);
+                act.wallpaperPlayer.showSpecific(name);
+            });
             return true;
         }
         return false;
@@ -2114,16 +2341,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void startCustomIntro(String title, String subtitle, String anim, int holdMs) {
         customIntroPending = false;
+        if (idleShowcase != null) idleShowcase.exitImmediate();
         android.util.Log.i("MainActivity", "startCustomIntro executing: title='" + title + "', subtitle='" + subtitle + "', anim=" + anim + ", holdMs=" + holdMs);
         if (bootIntroOverlay != null) {
             bootIntroOverlay.skip();
         }
-        View homeContent = findViewById(R.id.homeContent);
+        if (homeContent == null) homeContent = findViewById(R.id.homeContent);
         if (homeContent == null || grid == null || root == null) return;
 
         BootIntro.notifyDreamEnded();
         BootIntro.clearDreamState();
-        HeaderFocusIndicator headerFocus = findViewById(R.id.headerFocusIndicator);
+        cancelReturnSettle();
+        resetLaunchPulse();
         if (headerFocus != null) {
             headerFocus.setSuppressed(true);
         }
@@ -2142,6 +2371,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             bootIntroOverlay = null;
             BootIntro.clearDreamState();
             focusFirstDockTile();
+            if (idleShowcase != null) idleShowcase.scheduleIfEligible();
         });
     }
 
@@ -2241,6 +2471,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (!revealing) return true;
             return super.dispatchKeyEvent(event);
         }
+        if (idleShowcase != null && idleShowcase.handleDispatchKeyEvent(event)) {
+            return true;
+        }
+        if (launchCurtainPending || launchCurtainCommitted) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_BACK) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    resetLaunchTilesAndDim();
+                    fadeOutLaunchCurtainForResume();
+                }
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+                    || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || isOkKey(code)) {
+                return true;
+            }
+        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.
@@ -2328,6 +2576,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The start shared by reorder and edit-dock mode. False when there is nothing to move. */
     private boolean beginReorder() {
         if (adapter.movableCount() < 2) return false;
+        if (idleShowcase != null) idleShowcase.cancelTimer();
         // Before the reload below: once it has dropped the empty slots, the dock row also shows grid apps.
         dockInSession = new HashSet<>();
         dockedAtStart = adapter.dockFilled();
@@ -2336,6 +2585,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (adapter.hasEmptySlots()) reloadTiles();   // every position must hold a tile that can move
         reordering = true;
         orderAtStart = adapter.movableKeys();
+        if (animations && !reducedMotion) {
+            DefaultItemAnimator reorderAnimator = new DefaultItemAnimator();
+            reorderAnimator.setSupportsChangeAnimations(false);
+            reorderAnimator.setMoveDuration(190L);
+            reorderAnimator.setAddDuration(160L);
+            reorderAnimator.setRemoveDuration(160L);
+            grid.setItemAnimator(reorderAnimator);
+        }
         glass.setAccent(REORDER_ACCENT);
         btnReorder.setActivated(true);
         return true;
@@ -2447,19 +2704,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (pos >= adapter.movableCount()) return;   // the "Default home" tile stays put
         movingKey = adapter.keyAt(pos);
         dimOthers();
+        RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+        if (vh instanceof AppAdapter.Holder) {
+            LauncherMotion.pulseReorderPickup(((AppAdapter.Holder) vh).card, adapter.focusScale(), density, animations, reducedMotion);
+        }
     }
 
     /** Puts the carried tile down where it is; the mode stays on. */
     private void drop() {
+        if (movingKey != null) {
+            int pos = adapter.positionOf(movingKey);
+            RecyclerView.ViewHolder vh = pos >= 0 ? grid.findViewHolderForAdapterPosition(pos) : null;
+            if (vh instanceof AppAdapter.Holder) {
+                View card = ((AppAdapter.Holder) vh).card;
+                LauncherMotion.clearReorderElevation(card, advancedEffects, card.isFocused(), density);
+            }
+        }
         movingKey = null;
         dimOthers();
     }
 
     /** While a tile is carried, every other tile is dimmed so the carried one stands out; otherwise all are full. */
     private void dimOthers() {
+        boolean animateAlpha = animations && !reducedMotion && reordering;
         for (int i = 0; i < grid.getChildCount(); i++) {
             View item = grid.getChildAt(i);
-            item.setAlpha(tileAlpha(grid.getChildAdapterPosition(item)));
+            float target = tileAlpha(grid.getChildAdapterPosition(item));
+            item.animate().cancel();
+            if (!animateAlpha) {
+                item.setAlpha(target);
+            } else if (Math.abs(item.getAlpha() - target) > 0.01f) {
+                item.animate().alpha(target).setDuration(140L).start();
+            }
         }
     }
 
@@ -2480,6 +2756,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         dockEditAppKey = null;
         drop();
         reordering = false;
+        grid.setItemAnimator(null);
         adapter.setReordering(false);
         glass.setAccent(festive ? festival.accentColor() : 0);
         btnReorder.setActivated(false);
@@ -2503,6 +2780,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         if (fillDockLeavesSlots) reloadTiles();   // the empty dock slots left out while reordering come back
+        if (idleShowcase != null) idleShowcase.scheduleIfEligible();
     }
 
     /**
@@ -2586,6 +2864,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onLibraryRequested() {
+        if (idleShowcase != null) idleShowcase.cancelTimer();
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();
         libraryFocusPending = false;
@@ -2594,6 +2873,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         appLibrary = new AppLibraryDialog(this, animations, reducedMotion, appLibrarySelection, libraryOkOpens, adapter::containsPackage, () -> reloadApps(false), () -> {
             appLibrary = null;
             openPopup = null;
+            if (idleShowcase != null) idleShowcase.scheduleIfEligible();
             if (libraryFromTopBar) {
                 libraryFromTopBar = false;
                 btnLibraryTop.requestFocus();
@@ -2616,9 +2896,467 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     @Override
+    public boolean isReordering() {
+        return reordering;
+    }
+
+    @Override
+    public void onLaunchTile(View card, AppAdapter.LaunchCommit commit) {
+        if (card == null || !card.isAttachedToWindow()) {
+            commit.run(false);
+            return;
+        }
+        launchWithCurtain(card, null, commit);
+    }
+
+    /** Launches an app from screen-space card bounds (used when closing overlay dialogs like All Apps). */
+    void launchIntentFromScreenBounds(float screenCenterX, float screenCenterY, float width, float height,
+                                      Intent intent, Runnable onCantOpen) {
+        AppAdapter.LaunchCommit commit = curtainApplied ->
+                startIntentWithTransition(intent, curtainApplied, false, onCantOpen);
+        if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) {
+            commit.run(false);
+            return;
+        }
+        int[] rootLoc = new int[2];
+        root.getLocationOnScreen(rootLoc);
+        float[] relBounds = new float[] {
+                screenCenterX - rootLoc[0],
+                screenCenterY - rootLoc[1],
+                width,
+                height
+        };
+        launchWithCurtain(null, relBounds, commit);
+    }
+
+    private boolean startIntentWithTransition(Intent intent, boolean curtainApplied,
+                                              boolean markAppLaunched, Runnable onFail) {
+        try {
+            if (markAppLaunched) setAppLaunched(true);
+            startActivity(intent);
+            if (curtainApplied) {
+                LauncherMotion.applyCurtainOpenTransition(this, animations, reducedMotion, appLaunchSettings);
+            } else {
+                LauncherMotion.applySubScreenOpenTransition(this, animations, reducedMotion);
+            }
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            if (onFail != null) onFail.run();
+            return false;
+        }
+    }
+
+    /**
+     * Expands the clicked tile locally (capturing its artwork cleanly into an easing rounded-corner
+     * sheet that dissolves into solid pure black as Home recedes in depth) before firing {@code commit}.
+     */
+    private void launchWithCurtain(View sourceView, float[] relBounds, AppAdapter.LaunchCommit commit) {
+        AppLaunchSettings launchCfg = AppLaunchSettings.load(this);
+        appLaunchSettings = launchCfg;
+        if (!animations || reducedMotion || !launchCfg.enabled || launchCurtain == null || root == null
+                || root.getWidth() <= 0 || root.getHeight() <= 0) {
+            commit.run(false);
+            return;
+        }
+        if (sourceView != null && !sourceView.isAttachedToWindow()) {
+            commit.run(false);
+            return;
+        }
+        if (launchCurtainPending || launchCurtainCommitted) return;
+
+        final int rootW = root.getWidth();
+        final int rootH = root.getHeight();
+        final float cx, cy, srcW, srcH;
+        if (sourceView != null) {
+            int[] srcLoc = new int[2];
+            int[] rootLoc = new int[2];
+            sourceView.getLocationInWindow(srcLoc);
+            root.getLocationInWindow(rootLoc);
+            srcW = LauncherMotion.scaledDimensionPx(sourceView.getWidth(), sourceView.getScaleX());
+            srcH = LauncherMotion.scaledDimensionPx(sourceView.getHeight(), sourceView.getScaleY());
+            cx = (srcLoc[0] - rootLoc[0]) + srcW * 0.5f;
+            cy = (srcLoc[1] - rootLoc[1]) + srcH * 0.5f;
+        } else if (relBounds != null) {
+            cx = relBounds[0];
+            cy = relBounds[1];
+            srcW = relBounds[2];
+            srcH = relBounds[3];
+        } else {
+            commit.run(false);
+            return;
+        }
+        if (srcW <= 0f || srcH <= 0f) {
+            commit.run(false);
+            return;
+        }
+
+        final LauncherMotion.LaunchCurtainPose pose = LauncherMotion.computeCurtainPose(
+                rootW, rootH, cx, cy, srcW, srcH);
+        final float startCornerPx = launchCfg.roundedCorners
+                ? LauncherMotion.curtainCornerRadiusPx(rootH) : 0f;
+
+        cancelLaunchCurtainAnimator();
+        final Bitmap cardBmp = (launchCfg.cardMorph && sourceView != null && sourceView.getId() == R.id.card)
+                ? captureLaunchCardBitmap(sourceView) : null;
+        replaceLaunchCurtainBitmap(cardBmp);
+
+        final int gen = ++launchCurtainGen;
+        launchCurtainPending = true;
+        launchCurtainCommitted = false;
+        launchCurtainLostFocus = false;
+        handler.removeCallbacks(clearLaunchPulse);
+
+        prepareHomeForLaunchDepth(sourceView, rootW, rootH, launchCfg);
+
+        launchCurtain.animate().setListener(null).cancel();
+        launchCurtain.setLayerType(View.LAYER_TYPE_NONE, null);
+        launchCurtainCornerPx = startCornerPx;
+        launchCurtain.invalidateOutline();
+        launchCurtain.setPivotX(rootW * 0.5f);
+        launchCurtain.setPivotY(rootH * 0.5f);
+        launchCurtain.setTranslationX(pose.tx);
+        launchCurtain.setTranslationY(pose.ty);
+        launchCurtain.setScaleX(pose.startScaleX);
+        launchCurtain.setScaleY(pose.startScaleY);
+
+        final boolean hasArt = cardBmp != null && launchCurtainArt != null;
+        if (hasArt) {
+            launchCurtain.setAlpha(1f);
+            launchCurtainArt.setImageBitmap(cardBmp);
+            launchCurtainArt.setPivotX(rootW * 0.5f);
+            launchCurtainArt.setPivotY(rootH * 0.5f);
+            launchCurtainArt.setScaleX(1f);
+            launchCurtainArt.setScaleY(1f);
+            launchCurtainArt.setAlpha(1f);
+            launchCurtainArt.setVisibility(View.VISIBLE);
+        } else {
+            launchCurtain.setAlpha(0f);
+            if (launchCurtainArt != null) {
+                launchCurtainArt.setImageDrawable(null);
+                launchCurtainArt.setVisibility(View.INVISIBLE);
+            }
+        }
+        launchCurtain.setVisibility(View.VISIBLE);
+
+        ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
+        anim.setDuration(launchCfg.sweepDurationMs());
+        anim.setInterpolator(launchCfg.createInterpolator());
+        anim.addUpdateListener(a -> {
+            if (gen != launchCurtainGen || !launchCurtainPending || launchCurtain == null) return;
+            float u = (float) a.getAnimatedValue();
+            applyLaunchFrame(u, pose, startCornerPx, hasArt, launchCfg);
+        });
+        anim.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (launchCurtainAnimator == animation) {
+                    launchCurtainAnimator = null;
+                }
+                if (cancelled || gen != launchCurtainGen || !launchCurtainPending
+                        || isFinishing() || isDestroyed()) {
+                    return;
+                }
+                applyLaunchFrame(1f, pose, startCornerPx, hasArt, launchCfg);
+                disposeLaunchCurtainArt();
+                commitAfterCurtainExpand(gen, commit);
+            }
+        });
+        launchCurtainAnimator = anim;
+        anim.start();
+    }
+
+    private void applyLaunchFrame(float u, LauncherMotion.LaunchCurtainPose pose,
+                                  float startCornerPx, boolean hasArt, AppLaunchSettings launchCfg) {
+        if (launchCurtain == null) return;
+        launchCurtain.setTranslationX(pose.tx * (1f - u));
+        launchCurtain.setTranslationY(pose.ty * (1f - u));
+        launchCurtain.setScaleX(pose.startScaleX + (pose.fullScaleX - pose.startScaleX) * u);
+        launchCurtain.setScaleY(pose.startScaleY + (pose.fullScaleY - pose.startScaleY) * u);
+        launchCurtainCornerPx = startCornerPx > 0f
+                ? LauncherMotion.curtainCornerRadiusAt(startCornerPx, u) : 0f;
+        launchCurtain.invalidateOutline();
+
+        if (hasArt && launchCurtainArt != null) {
+            float artAlpha = LauncherMotion.curtainArtAlphaAt(u);
+            if (artAlpha > 0.001f) {
+                launchCurtainArt.setAlpha(artAlpha);
+                float artScale = 1f + 0.10f * u;
+                launchCurtainArt.setScaleX(artScale);
+                launchCurtainArt.setScaleY(artScale);
+            } else if (launchCurtainArt.getVisibility() == View.VISIBLE) {
+                launchCurtainArt.setAlpha(0f);
+                launchCurtainArt.setVisibility(View.INVISIBLE);
+            }
+        } else {
+            launchCurtain.setAlpha(Math.min(1f, u / 0.28f));
+        }
+
+        // Recede Home behind the opening window according to configured background depth.
+        float bgScaleDelta = launchCfg.bgScaleDelta();
+        float bgDimFactor = launchCfg.bgDimFactor();
+        float heroRaceDim = Math.min(0.88f, bgDimFactor * 1.11f);
+        if (launchDimApplied && homeContent != null) {
+            float bgScale = 1f - bgScaleDelta * u;
+            homeContent.setScaleX(bgScale);
+            homeContent.setScaleY(bgScale);
+            homeContent.setAlpha(1f - bgDimFactor * u);
+        }
+        if (launchHeroDimApplied && hero != null) {
+            float bgScale = 1f - bgScaleDelta * u;
+            hero.setScaleX(bgScale);
+            hero.setScaleY(bgScale);
+            hero.setAlpha(preLaunchHeroAlpha * (1f - heroRaceDim * u));
+        }
+        if (launchRaceDimApplied && racePanel != null) {
+            racePanel.setAlpha(preLaunchRaceAlpha * (1f - heroRaceDim * u));
+        }
+        if (glassScaledForLaunch && glass != null) {
+            float gp = Math.min(1f, u / 0.28f);
+            float gs = 1f + 0.07f * gp;
+            glass.setScaleX(gs);
+            glass.setScaleY(gs);
+            glass.setAlpha(preLaunchGlassAlpha * (1f - gp));
+        }
+    }
+
+    private void commitAfterCurtainExpand(int gen, AppAdapter.LaunchCommit commit) {
+        if (gen != launchCurtainGen || !launchCurtainPending || isFinishing() || isDestroyed()) {
+            clearLaunchCurtainImmediate();
+            return;
+        }
+        launchCurtainPending = false;
+        launchCurtainCommitted = true;
+        boolean launched = commit.run(true);
+        if (launched) {
+            handler.removeCallbacks(clearLaunchPulse);
+            handler.postDelayed(clearLaunchPulse, DEAD_LAUNCH_TIMEOUT_MS);
+        } else {
+            resetLaunchTilesAndDim();
+            fadeOutLaunchCurtainForResume();
+        }
+    }
+
+    private Bitmap captureLaunchCardBitmap(View card) {
+        int w = card.getWidth();
+        int h = card.getHeight();
+        if (w <= 0 || h <= 0) return null;
+        try {
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bmp);
+            card.draw(canvas);
+            return bmp;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void replaceLaunchCurtainBitmap(Bitmap next) {
+        Bitmap prev = launchCurtainBitmap;
+        launchCurtainBitmap = next;
+        if (prev != null && prev != next && !prev.isRecycled()) {
+            prev.recycle();
+        }
+    }
+
+    private void disposeLaunchCurtainArt() {
+        if (launchCurtainArt != null) {
+            launchCurtainArt.setImageDrawable(null);
+            launchCurtainArt.setScaleX(1f);
+            launchCurtainArt.setScaleY(1f);
+            launchCurtainArt.setAlpha(0f);
+            launchCurtainArt.setVisibility(View.INVISIBLE);
+        }
+        replaceLaunchCurtainBitmap(null);
+    }
+
+    private void cancelLaunchCurtainAnimator() {
+        ValueAnimator anim = launchCurtainAnimator;
+        launchCurtainAnimator = null;
+        if (anim != null) {
+            anim.cancel();
+        }
+    }
+
+    private void prepareHomeForLaunchDepth(View sourceCard, int rootW, int rootH, AppLaunchSettings launchCfg) {
+        resetLaunchTilesAndDim();
+        if (sourceCard != null) {
+            launchingCard = sourceCard;
+            sourceCard.animate().setListener(null).cancel();
+        }
+        if (launchCfg.hasBackgroundDepth()) {
+            if (homeContent != null) {
+                launchDimApplied = true;
+                homeContent.animate().setListener(null).cancel();
+                homeContent.setPivotX(rootW * 0.5f);
+                homeContent.setPivotY(rootH * 0.5f);
+                homeContent.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            }
+            if (hero != null && heroShown && hero.getVisibility() == View.VISIBLE && hero.getAlpha() > 0.01f) {
+                launchHeroDimApplied = true;
+                preLaunchHeroAlpha = hero.getAlpha();
+                hero.animate().setListener(null).cancel();
+                hero.setPivotX(rootW * 0.5f - hero.getX());
+                hero.setPivotY(rootH * 0.5f - hero.getY());
+            }
+            if (racePanel != null && racePanel.getVisibility() == View.VISIBLE && racePanel.getAlpha() > 0.01f) {
+                launchRaceDimApplied = true;
+                preLaunchRaceAlpha = racePanel.getAlpha();
+                racePanel.animate().cancel();
+            }
+        }
+        if (glass != null && glassShown && glass.getVisibility() == View.VISIBLE && glass.getAlpha() > 0.01f) {
+            glassScaledForLaunch = true;
+            preLaunchGlassAlpha = glass.getAlpha();
+            glass.animate().cancel();
+            glass.setPivotX(glass.getWidth() * 0.5f);
+            glass.setPivotY(glass.getHeight() * 0.5f);
+        }
+    }
+
+    private void settleLaunchPulseIfResumed() {
+        // Never remove the curtain while paused or unfocused: the target app is still loading
+        // and either onStop() (once covered) or onResume() / focus return will clear it safely.
+        if (!resumed || !hasWindowFocus()) return;
+        resetLaunchTilesAndDim();
+        fadeOutLaunchCurtainForResume();
+    }
+
+    private void onResumeLaunchCleanup() {
+        resetLaunchTilesAndDim();
+        if (launchCurtainPending) {
+            clearLaunchCurtainImmediate();
+        } else if (launchCurtainCommitted) {
+            fadeOutLaunchCurtainForResume();
+        } else if (launchCurtain != null && launchCurtain.getVisibility() == View.VISIBLE) {
+            clearLaunchCurtainImmediate();
+        }
+    }
+
+    private void onPauseLaunchCleanup() {
+        handler.removeCallbacks(clearLaunchPulse);
+        resetLaunchTilesAndDim();
+        if (launchCurtainCommitted) {
+            launchCurtainLostFocus = true;
+        } else {
+            clearLaunchCurtainImmediate();
+        }
+    }
+
+    private void fadeOutLaunchCurtainForResume() {
+        launchCurtainGen++;
+        launchCurtainPending = false;
+        launchCurtainCommitted = false;
+        launchCurtainLostFocus = false;
+        handler.removeCallbacks(clearLaunchPulse);
+        cancelLaunchCurtainAnimator();
+        disposeLaunchCurtainArt();
+        if (launchCurtain == null || launchCurtain.getVisibility() != View.VISIBLE) return;
+        if (!animations || reducedMotion) {
+            clearLaunchCurtainImmediate();
+            return;
+        }
+        final int gen = launchCurtainGen;
+        launchCurtain.animate().setListener(null).cancel();
+        launchCurtain.animate()
+                .alpha(0f)
+                .setDuration(140L)
+                .setInterpolator(new DecelerateInterpolator(1.6f))
+                .withEndAction(() -> {
+                    if (gen == launchCurtainGen) clearLaunchCurtainImmediate();
+                })
+                .start();
+    }
+
+    private void clearLaunchCurtainImmediate() {
+        launchCurtainGen++;
+        launchCurtainPending = false;
+        launchCurtainCommitted = false;
+        launchCurtainLostFocus = false;
+        handler.removeCallbacks(clearLaunchPulse);
+        cancelLaunchCurtainAnimator();
+        disposeLaunchCurtainArt();
+        if (launchCurtain != null) {
+            launchCurtain.animate().setListener(null).cancel();
+            launchCurtain.setVisibility(View.INVISIBLE);
+            launchCurtain.setAlpha(0f);
+            launchCurtain.setTranslationX(0f);
+            launchCurtain.setTranslationY(0f);
+            launchCurtain.setScaleX(1f);
+            launchCurtain.setScaleY(1f);
+            launchCurtainCornerPx = 0f;
+            launchCurtain.invalidateOutline();
+            launchCurtain.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
+    }
+
+    private void resetLaunchPulse() {
+        resetLaunchTilesAndDim();
+        clearLaunchCurtainImmediate();
+    }
+
+    private void resetLaunchTilesAndDim() {
+        View card = launchingCard;
+        launchingCard = null;
+        if (card != null) {
+            card.animate().setListener(null).cancel();
+            card.setAlpha(1f);
+            float rest = card.isFocused() && animations && adapter != null ? adapter.focusScale() : 1f;
+            card.setScaleX(rest);
+            card.setScaleY(rest);
+            LauncherMotion.clearReorderElevation(card, advancedEffects, card.isFocused(),
+                    getResources().getDisplayMetrics().density);
+        }
+        if (glassScaledForLaunch) {
+            glassScaledForLaunch = false;
+            if (glass != null) {
+                glass.animate().cancel();
+                glass.setScaleX(1f);
+                glass.setScaleY(1f);
+                glass.setAlpha(glassShown ? preLaunchGlassAlpha : 0f);
+            }
+        }
+        if (launchDimApplied) {
+            launchDimApplied = false;
+            if (homeContent != null) {
+                homeContent.animate().cancel();
+                homeContent.setScaleX(1f);
+                homeContent.setScaleY(1f);
+                homeContent.setAlpha(1f);
+                homeContent.setLayerType(View.LAYER_TYPE_NONE, null);
+            }
+        }
+        if (launchHeroDimApplied) {
+            launchHeroDimApplied = false;
+            if (hero != null) {
+                hero.animate().cancel();
+                hero.setScaleX(1f);
+                hero.setScaleY(1f);
+                hero.setAlpha(heroShown ? preLaunchHeroAlpha : 0f);
+            }
+        }
+        if (launchRaceDimApplied) {
+            launchRaceDimApplied = false;
+            if (racePanel != null) {
+                racePanel.animate().cancel();
+                racePanel.setAlpha(preLaunchRaceAlpha);
+            }
+        }
+    }
+
+    @Override
     public void onTileFocused(int position, View card) {
         lastFocused = position;
         lastFocusedKey = adapter.keyAt(position);
+        if (wallpaperPlayer != null) {
+            wallpaperPlayer.setFocusParallax(LauncherMotion.parallaxFraction(position % COLUMNS, COLUMNS, rtlAppGrid));
+        }
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
         // would be sized to 2*pad. Run again once the tile is laid out.
         if (card.getWidth() == 0) {
@@ -2663,6 +3401,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!glassShown) {
             springX.cancel();
             springY.cancel();
+            glass.setScaleX(1f);
+            glass.setScaleY(1f);
             glass.setTranslationX(x);
             glass.setTranslationY(y);
             if (animations && !reducedMotion) glass.animate().alpha(1f).setDuration(180).start();
@@ -2730,12 +3470,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
+        int slideDir = LauncherMotion.heroSlideDirection(lastHeroPosition, position, rtlAppGrid);
+        lastHeroPosition = position;
+        pendingHeroRestY = Float.NaN;
         if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
 
         if (!animations || reducedMotion) {
             // Snap the shelf instead of sliding and fading it: each of those frames repaints the
             // full-screen panel, and this switch exists for the GPUs that cannot afford it.
-            hero.animate().cancel();
+            hero.animate().setListener(null).cancel();
             ambient.animate().cancel();
             fillHero(position, label);
             hero.setY(y);
@@ -2751,7 +3494,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (!heroShown) {
             stopAmbientAnimation();
-            hero.animate().cancel();
+            hero.animate().setListener(null).cancel();
             ambient.animate().cancel();
             fillHero(position, label);
             hero.setY(y);
@@ -2763,13 +3506,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             heroShown = true;
         } else if (changed) {
-            if (advancedEffects) hero.animate().cancel();
-            hero.animate().alpha(0f).translationX(-12 * density).setDuration(120).withEndAction(() -> {
-                fillHero(position, label);
-                hero.setY(y);
-                hero.setTranslationX(12 * density);
-                hero.animate().alpha(1f).translationX(0f).setDuration(200).start();
-            }).start();
+            hero.animate().setListener(null).cancel();
+            final float travel = (slideDir != 0 ? slideDir : 1) * 14f * density;
+            hero.animate().alpha(0f).translationX(-travel).setDuration(105L)
+                    .setInterpolator(new DecelerateInterpolator(1.3f))
+                    .withEndAction(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        fillHero(position, label);
+                        hero.setY(y);
+                        hero.setTranslationX(travel);
+                        hero.animate().alpha(1f).translationX(0f).setDuration(190L)
+                                .setInterpolator(new DecelerateInterpolator(1.6f)).start();
+                    }).start();
             if (ambientGlow && advancedEffects) {
                 transitionAmbient(color);
             } else if (ambientGlow && color != ambientColor && glowSnap) {
@@ -3014,6 +3762,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroArt.animate().cancel();
         heroArt.setAlpha(0f);
         heroShown = false;
+        lastHeroPosition = -1;
         if (!ambientGlow) return;
         if (!animations || reducedMotion) {
             setAmbient(color);
@@ -3043,6 +3792,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambient.animate().cancel();
         heroArt.animate().cancel();
         heroShown = false;
+        lastHeroPosition = -1;
         if (animations && !reducedMotion) {
             hero.animate().alpha(0f).setDuration(160).start();
             if (ambientGlow) ambient.animate().alpha(0f).setDuration(300).start();
@@ -3058,6 +3808,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!glassShown) return;
         glassShown = false;
         glass.animate().cancel();
+        glass.setScaleX(1f);
+        glass.setScaleY(1f);
         if (animations && !reducedMotion) glass.animate().alpha(0f).setDuration(160).start();
         else glass.setAlpha(0f);
     }
@@ -3431,7 +4183,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             button.setCompoundDrawableTintList(null);
             button.setContentDescription(label);
             Intent target = launch;
-            button.setOnClickListener(v -> open(new Intent(target)));
+            button.setOnClickListener(v -> {
+                if (headerFocus != null) headerFocus.pulsePress();
+                open(new Intent(target), v);
+            });
             // After the network pill and the VPN pill; the Hebrew bar runs the other way, so before both there.
             bar.addView(button, bar.indexOfChild(getResources().getBoolean(R.bool.rtl_menu_bar) ? btnVpn : btnWifi));
             topAppButtons.add(button);
@@ -3950,7 +4705,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // With a VPN app configured, a VPN that is down matters too: show a red "VPN off" capsule then.
         boolean vpnDown = !vpn && online && !vpnApp.isEmpty();
         if (vpnPill) updateVpnPill(vpn);
-        if ((vpn || vpnDown) && !vpnPill) {
+        if (idleShowcase != null && idleShowcase.isUiCollapsed()) {
+            idleShowcase.interceptWifiTextUpdate(wifiIconOnly ? null : text);
+        } else if ((vpn || vpnDown) && !vpnPill) {
             // Network name, then the green lock-and-VPN (or red "VPN off") capsule drawn in place of the word.
             String badge = getString(vpn ? R.string.vpn : R.string.vpn_off);
             VpnBadge span = new VpnBadge(vpn ? getDrawable(R.drawable.ic_lock) : null, density);
@@ -3978,7 +4735,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else if (!TextUtils.equals(btnWifi.getText(), text)) {
             btnWifi.setText(text);
         }
-        if (wifiIconOnly) {
+        if (wifiIconOnly && (idleShowcase == null || !idleShowcase.isUiCollapsed())) {
             btnWifi.setContentDescription(btnWifi.getText());
             btnWifi.setText(null);
         }
@@ -4140,6 +4897,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** vpn_pill: the pill outlined in green with a lock while a VPN is up, outlined in red "VPN off" while it is not;
      *  solid with a white ring only while focused. */
     private void updateVpnPill(boolean vpn) {
+        if (idleShowcase != null && idleShowcase.isUiCollapsed()) return;
         int state = VpnBadge.pillState(vpn, vpnAppIntent() != null);
         if (state == VpnBadge.PILL_HIDDEN) {
             if (btnVpn.getVisibility() == View.GONE) return;
@@ -4278,13 +5036,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void open(Intent i) {
-        setAppLaunched(true);
+        open(i, null);
+    }
+
+    private void open(Intent i, View sourceView) {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            startActivity(i);
-        } catch (ActivityNotFoundException | SecurityException e) {
-            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        boolean quickPanel = i.getComponent() != null
+                && QuickSettingsActivity.class.getName().equals(i.getComponent().getClassName());
+        if (quickPanel) {
+            setAppLaunched(true);
+            try {
+                startActivity(i);
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+            }
+            return;
         }
+        Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        AppAdapter.LaunchCommit commit = curtainApplied ->
+                startIntentWithTransition(i, curtainApplied, true, onNotAvailable);
+        launchWithCurtain(sourceView, null, commit);
     }
 
     /** `input_sources` in config.xml or a theme: "HW5=23" maps the framework input whose id ends in /HW5 to a vendor
@@ -4611,20 +5382,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (focusIndicator != null) {
                 focusIndicator.reset();
             }
+            if (idleShowcase != null) idleShowcase.scheduleIfEligible();
         });
         openPopup = popup;
+        if (idleShowcase != null) idleShowcase.cancelTimer();
         return popup;
     }
 
     /** Drop in: fade and unfold from the top edge, hanging under the anchor pill. */
     private void dropIn(PopupWindow popup, View panel, View anchor, int gravity) {
-        panel.setAlpha(0f);
-        panel.setPivotY(0f);
-        panel.setScaleY(0.92f);
-        panel.setTranslationY(-8 * density);
-        popup.showAsDropDown(anchor, 0, (int) (10 * density), gravity);
-        panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        if (!animations) {
+            panel.setAlpha(1f);
+            panel.setScaleY(1f);
+            panel.setTranslationY(0f);
+            popup.showAsDropDown(anchor, 0, (int) (10 * density), gravity);
+        } else {
+            panel.setAlpha(0f);
+            panel.setPivotY(0f);
+            panel.setScaleY(reducedMotion ? 1f : 0.92f);
+            panel.setTranslationY(reducedMotion ? 0f : -8 * density);
+            popup.showAsDropDown(anchor, 0, (int) (10 * density), gravity);
+            panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        }
+        ViewGroup rows = panel.findViewById(R.id.rows);
+        LauncherMotion.staggerRows(rows, animations, reducedMotion, density);
     }
 
     private View addSeparator(LinearLayout rows) {
@@ -4716,7 +5498,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         addInputRow(rows, popup, R.drawable.ic_swap_vert, getString(R.string.reorder), -1, this::toggleReorder);
         if (launcherSettingsButton) {
             addInputRow(rows, popup, R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), -1,
-                    () -> startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+                    this::openLauncherSettings);
         } else {
             addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.settings), -1,
                     () -> open(systemIntent(Settings.ACTION_SETTINGS)));
@@ -4733,8 +5515,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
         PopupWindow popup = glassPopup(panel, (int) (200 * density));
-        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
-                new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, this::openLauncherSettings);
         // Firmware that ships its own settings app next to the AOSP one (Xiaomi China is one): the
         // vendor app holds pages the AOSP settings has no row for, such as Account & Security with
         // the ADB switch. Offered here only while one of them is installed.
@@ -5022,7 +5803,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Same slot is not enough: tiles may have been rebuilt during the hold, so the app must match too.
         if (!holdOkKey.equals(adapter.keyAt(position))) return;
         View card = getCurrentFocus();
-        if (card != null) card.setPressed(false);
+        if (card != null) {
+            card.setPressed(false);
+            LauncherMotion.restoreFocusScale(card, adapter.focusScale(), animations, reducedMotion);
+        }
         onTileLongPress(position, card);
     }
 
@@ -5065,13 +5849,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (at[1] + card.getHeight() + gap + height <= root.getHeight()) {
             dropIn(popup, panel, card, Gravity.START);
         } else {
-            panel.setAlpha(0f);
-            panel.setPivotY(height);
-            panel.setScaleY(0.92f);
-            panel.setTranslationY(8 * density);
-            popup.showAtLocation(root, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
-            panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(220)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            if (!animations) {
+                panel.setAlpha(1f);
+                panel.setScaleY(1f);
+                panel.setTranslationY(0f);
+                popup.showAtLocation(root, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
+            } else {
+                panel.setAlpha(0f);
+                panel.setPivotY(height);
+                panel.setScaleY(reducedMotion ? 1f : 0.92f);
+                panel.setTranslationY(reducedMotion ? 0f : 8 * density);
+                popup.showAtLocation(root, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
+                panel.animate().alpha(1f).scaleY(1f).translationY(0f)
+                        .setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            }
+            LauncherMotion.staggerRows(rows, animations, reducedMotion, density);
         }
         rows.getChildAt(0).requestFocus();
     }
@@ -5183,6 +5976,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         dialog.setOnCancelListener(d -> choose.onClick(keep));
         dialog.setOnDismissListener(d -> {
             if (cardPrompt == dialog) cardPrompt = null;
+            if (idleShowcase != null) idleShowcase.scheduleIfEligible();
         });
         // Left and Right move between the two buttons; Up and Down stay put; the ends don't wrap.
         View.OnKeyListener keys = (v, keyCode, event) -> {
@@ -5196,6 +5990,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         keep.setOnKeyListener(keys);
         show.setOnKeyListener(keys);
         cardPrompt = dialog;
+        if (idleShowcase != null) idleShowcase.cancelTimer();
         dialog.show();
         keep.requestFocus();
     }

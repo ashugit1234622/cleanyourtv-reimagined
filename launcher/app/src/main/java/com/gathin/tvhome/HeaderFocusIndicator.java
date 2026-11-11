@@ -37,6 +37,7 @@ public class HeaderFocusIndicator extends View {
     private ValueAnimator moveAnimator;
     private ValueAnimator fadeAnimator;
     private ValueAnimator textAnimator;
+    private ValueAnimator pulseAnimator;
 
     private View currentFocusedView;
     private boolean isVisible = false;
@@ -73,9 +74,10 @@ public class HeaderFocusIndicator extends View {
 
     public void reset() {
         removeCallbacks(null);
-        if (moveAnimator != null) moveAnimator.cancel();
-        if (fadeAnimator != null) fadeAnimator.cancel();
-        if (textAnimator != null) textAnimator.cancel();
+        if (moveAnimator != null) { moveAnimator.removeAllListeners(); moveAnimator.cancel(); }
+        if (fadeAnimator != null) { fadeAnimator.removeAllListeners(); fadeAnimator.cancel(); }
+        if (textAnimator != null) { textAnimator.removeAllListeners(); textAnimator.cancel(); }
+        if (pulseAnimator != null) { pulseAnimator.removeAllListeners(); pulseAnimator.cancel(); }
         if (currentFocusedView instanceof TextView) {
             applyColor((TextView) currentFocusedView, 0xFFFFFFFF);
         }
@@ -84,6 +86,31 @@ public class HeaderFocusIndicator extends View {
         currentAlpha = 0f;
         currentScale = 1f;
         invalidate();
+    }
+
+    /** Crisp tactile scale dip when activating a top-bar pill via OK/click. */
+    public void pulsePress() {
+        if (suppressed || !isVisible || reducedMotion) return;
+        if (pulseAnimator != null) {
+            pulseAnimator.removeAllListeners();
+            pulseAnimator.cancel();
+        }
+        pulseAnimator = ValueAnimator.ofFloat(0f, 1f);
+        pulseAnimator.setDuration(120L);
+        pulseAnimator.addUpdateListener(anim -> {
+            float t = anim.getAnimatedFraction();
+            currentScale = 1.04f - 0.08f * (float) Math.sin(t * Math.PI);
+            invalidate();
+        });
+        pulseAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (pulseAnimator != animation) return;
+                currentScale = isVisible ? 1.04f : 1f;
+                invalidate();
+            }
+        });
+        pulseAnimator.start();
     }
 
     public void onButtonFocused(View button) {
@@ -112,6 +139,14 @@ public class HeaderFocusIndicator extends View {
                 fadeIn();
                 transitionTextColor(null, button);
             } else {
+                // If returning during a fade-out race, cancel it and restore opacity while gliding
+                if (fadeAnimator != null && fadeAnimator.isRunning()) {
+                    fadeAnimator.removeAllListeners();
+                    fadeAnimator.cancel();
+                    fadeIn();
+                } else if (currentAlpha < 0.99f) {
+                    fadeIn();
+                }
                 // Morph and glide to target button
                 animateTo(targetX, targetY, targetW, targetH);
                 transitionTextColor(oldFocus, button);
@@ -173,7 +208,10 @@ public class HeaderFocusIndicator extends View {
     }
 
     private void fadeIn() {
-        if (fadeAnimator != null) fadeAnimator.cancel();
+        if (fadeAnimator != null) {
+            fadeAnimator.removeAllListeners();
+            fadeAnimator.cancel();
+        }
         isVisible = true;
 
         fadeAnimator = ValueAnimator.ofFloat(currentAlpha, 1f);
@@ -188,9 +226,22 @@ public class HeaderFocusIndicator extends View {
     }
 
     private void fadeOut(View lastFocused) {
-        if (fadeAnimator != null) fadeAnimator.cancel();
-        if (moveAnimator != null) moveAnimator.cancel();
-        if (textAnimator != null) textAnimator.cancel();
+        if (fadeAnimator != null) {
+            fadeAnimator.removeAllListeners();
+            fadeAnimator.cancel();
+        }
+        if (moveAnimator != null) {
+            moveAnimator.removeAllListeners();
+            moveAnimator.cancel();
+        }
+        if (textAnimator != null) {
+            textAnimator.removeAllListeners();
+            textAnimator.cancel();
+        }
+        if (pulseAnimator != null) {
+            pulseAnimator.removeAllListeners();
+            pulseAnimator.cancel();
+        }
 
         if (lastFocused instanceof TextView) {
             applyColor((TextView) lastFocused, 0xFFFFFFFF);

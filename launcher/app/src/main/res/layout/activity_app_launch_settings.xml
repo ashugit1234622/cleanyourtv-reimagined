@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/launchSettingsRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF101419">
+
+    <ScrollView
+        android:id="@+id/launchSettingsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingStart="72dp"
+        android:paddingTop="38dp"
+        android:paddingEnd="72dp"
+        android:paddingBottom="64dp">
+
+        <LinearLayout
+            android:id="@+id/launchSettingsContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                android:text="@string/launch_anim_settings_title"
+                android:textColor="#FFFFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/launchAnimEnabledChoice"
+                style="@style/SettingsRow"
+                android:nextFocusUp="@id/launchAnimEnabledChoice" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_enabled_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchAnimNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginBottom="14dp"
+                android:textColor="#FFE5A93B"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/launchSpeedChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_speed_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchEasingChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_easing_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchCardMorphChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_card_morph_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchBgDepthChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_bg_depth_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchCornersChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/launch_anim_corners_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchRevealChoice"
+                style="@style/SettingsRow" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="18dp"
+                android:text="@string/launch_anim_reveal_help"
+                android:textColor="#FF8A96A0"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/launchPreviewChoice"
+                style="@style/SettingsRow"
+                android:text="@string/launch_anim_preview" />
+
+            <TextView
+                android:id="@+id/launchResetChoice"
+                style="@style/SettingsRow"
+                android:layout_marginTop="12dp"
+                android:nextFocusDown="@id/launchResetChoice"
+                android:text="@string/launch_anim_reset" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <View
+        android:id="@+id/previewBgDim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:background="#FF000000"
+        android:clickable="false"
+        android:elevation="24dp"
+        android:focusable="false"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/previewCurtain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:clickable="false"
+        android:elevation="48dp"
+        android:focusable="false"
+        android:visibility="invisible">
+
+        <ImageView
+            android:id="@+id/previewCurtainArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+
+        <TextView
+            android:id="@+id/previewAppUi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:paddingStart="36dp"
+            android:paddingTop="20dp"
+            android:paddingEnd="36dp"
+            android:paddingBottom="20dp"
+            android:text="@string/launch_anim_preview_ready"
+            android:textColor="#FFFFFFFF"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:visibility="invisible" />
+    </FrameLayout>
+
+</FrameLayout>
+

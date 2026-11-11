@@ -387,4 +387,12 @@ public final class IntroSettingsActivity extends Activity {
                 return getString(R.string.intro_anim_pop);
         }
     }
+
+    @Override
+    public void finish() {
+        super.finish();
+        boolean anim = config == null || config.animations;
+        boolean rm = config != null && config.reducedMotion;
+        LauncherMotion.applySubScreenCloseTransition(this, anim, rm);
+    }
 }

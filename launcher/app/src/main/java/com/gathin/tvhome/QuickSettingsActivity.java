@@ -30,6 +30,9 @@ public final class QuickSettingsActivity extends Activity {
     private static final String CACHE_PREFS = "quick_settings_cache";
     private static ClassLoader sMitvClassLoader;
     private QuickSettingsFocusIndicator focusIndicator;
+    private boolean animations = true;
+    private boolean reducedMotion = false;
+    private boolean panelEntered = false;
 
     private ClassLoader getMitvClassLoader() {
         if (sMitvClassLoader == null) {
@@ -65,6 +68,9 @@ public final class QuickSettingsActivity extends Activity {
             return;
         }
         setContentView(R.layout.activity_quick_settings);
+        Config cfg = Config.load(this);
+        animations = cfg.animations;
+        reducedMotion = cfg.reducedMotion;
         if (getResources().getBoolean(R.bool.rtl_menu_bar)) {
             View panel = findViewById(R.id.panel);
             android.widget.FrameLayout.LayoutParams position =
@@ -80,6 +86,9 @@ public final class QuickSettingsActivity extends Activity {
         scrim.setFocusable(false);
         scrim.setFocusableInTouchMode(false);
         focusIndicator = findViewById(R.id.focusIndicator);
+        if (focusIndicator != null) {
+            focusIndicator.setReducedMotion(reducedMotion);
+        }
         buildRows();
     }
 
@@ -114,6 +123,32 @@ public final class QuickSettingsActivity extends Activity {
         addRow(rows, R.drawable.ic_home_settings, getString(R.string.launcher_settings),
                 new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));
 
+        if (!panelEntered) {
+            panelEntered = true;
+            View panel = findViewById(R.id.panel);
+            if (panel != null) {
+                panel.animate().cancel();
+                if (!animations) {
+                    panel.setAlpha(1f);
+                    panel.setScaleY(1f);
+                    panel.setTranslationY(0f);
+                } else {
+                    float density = getResources().getDisplayMetrics().density;
+                    panel.setAlpha(0f);
+                    panel.setPivotY(0f);
+                    panel.setScaleY(reducedMotion ? 1f : 0.92f);
+                    panel.setTranslationY(reducedMotion ? 0f : -8f * density);
+                    panel.animate()
+                            .alpha(1f)
+                            .scaleY(1f)
+                            .translationY(0f)
+                            .setDuration(reducedMotion ? Motion.REDUCED_MS : 200L)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                            .start();
+                }
+            }
+            LauncherMotion.staggerRows(rows, animations, reducedMotion, getResources().getDisplayMetrics().density);
+        }
         if (rows.getChildCount() > 0) {
             rows.post(() -> {
                 if (rows.getChildCount() > 0) {

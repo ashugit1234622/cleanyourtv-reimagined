@@ -450,4 +450,29 @@
         android:layout_height="10dp"
         android:alpha="0"
         android:importantForAccessibility="no" />
+
+    <!-- Full-screen iOS-style launch veil: expands locally from the clicked tile (carrying its artwork
+         into deep black) before firing startActivity, eliminating cold-start frame stalls on slow CPUs. -->
+    <FrameLayout
+        android:id="@+id/launchCurtain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:elevation="48dp"
+        android:alpha="0"
+        android:visibility="invisible"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no">
+
+        <ImageView
+            android:id="@+id/launchCurtainArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:alpha="0"
+            android:visibility="invisible"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
 </FrameLayout>

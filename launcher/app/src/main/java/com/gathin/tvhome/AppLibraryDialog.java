@@ -205,7 +205,16 @@ final class AppLibraryDialog {
             activity.getWindowManager().updateViewLayout(container, params);
         }
         panel.setAlpha(0f);
-        panel.animate().alpha(1f).setDuration(reducedMotion ? Motion.REDUCED_MS : 180).start();
+        if (animations && !reducedMotion) {
+            panel.setScaleX(0.96f);
+            panel.setScaleY(0.96f);
+            panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        } else {
+            panel.setScaleX(1f);
+            panel.setScaleY(1f);
+            panel.animate().alpha(1f).setDuration(reducedMotion ? Motion.REDUCED_MS : 180).start();
+        }
     }
 
     /** Called by the activity's existing package receiver; an uninstall cannot leave a stale action. */
@@ -506,15 +515,34 @@ final class AppLibraryDialog {
     }
 
     private void open(ResolveInfo app) {
+        View focusedCard = catalog != null ? catalog.findFocus() : null;
+        View sourceView = focusedCard != null ? focusedCard : panel;
+        int[] loc = new int[2];
+        float srcW = 0f, srcH = 0f, srcCx = 0f, srcCy = 0f;
+        if (sourceView != null && sourceView.isAttachedToWindow()) {
+            sourceView.getLocationOnScreen(loc);
+            srcW = LauncherMotion.scaledDimensionPx(sourceView.getWidth(), sourceView.getScaleX());
+            srcH = LauncherMotion.scaledDimensionPx(sourceView.getHeight(), sourceView.getScaleY());
+            srcCx = loc[0] + srcW * 0.5f;
+            srcCy = loc[1] + srcH * 0.5f;
+        }
         close();
         Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(
                 new ComponentName(app.activityInfo.packageName, app.activityInfo.name));
         // TV apps keep the leanback launch intent, so an app already running resumes instead of restarting.
         if (tvPackages.contains(app.activityInfo.packageName)) intent.addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-        try { activity.startActivity(intent); }
-        catch (ActivityNotFoundException | SecurityException e) {
-            Toast.makeText(activity, activity.getString(R.string.cant_open, label(app)), Toast.LENGTH_SHORT).show();
+        Runnable onCantOpen = () -> Toast.makeText(
+                activity, activity.getString(R.string.cant_open, label(app)), Toast.LENGTH_SHORT).show();
+        if (activity instanceof MainActivity && srcW > 0f && srcH > 0f) {
+            ((MainActivity) activity).launchIntentFromScreenBounds(srcCx, srcCy, srcW, srcH, intent, onCantOpen);
+            return;
+        }
+        try {
+            activity.startActivity(intent);
+            LauncherMotion.applySubScreenOpenTransition(activity, animations, reducedMotion);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            onCantOpen.run();
         }
     }
 
@@ -579,6 +607,7 @@ final class AppLibraryDialog {
         menu.showAtLocation(activity.getWindow().getDecorView(), Gravity.TOP | Gravity.START, x, y);
         menuPanel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        LauncherMotion.staggerRows(rows, animations, reducedMotion, density);
         rows.getChildAt(0).requestFocus();
     }
 

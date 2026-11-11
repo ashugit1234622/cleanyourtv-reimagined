@@ -81,9 +81,9 @@ public class QuickSettingsFocusIndicator extends View {
     }
 
     public void reset() {
-        if (moveAnimator != null) moveAnimator.cancel();
-        if (fadeAnimator != null) fadeAnimator.cancel();
-        if (textAnimator != null) textAnimator.cancel();
+        if (moveAnimator != null) { moveAnimator.removeAllListeners(); moveAnimator.cancel(); }
+        if (fadeAnimator != null) { fadeAnimator.removeAllListeners(); fadeAnimator.cancel(); }
+        if (textAnimator != null) { textAnimator.removeAllListeners(); textAnimator.cancel(); }
         if (currentFocusedRow != null) {
             applyColor(currentFocusedRow, 0xFFFFFFFF, 0x73FFFFFF);
         }
@@ -99,13 +99,22 @@ public class QuickSettingsFocusIndicator extends View {
 
         row.post(() -> {
             if (!row.isAttachedToWindow() || !row.isFocused()) return;
-            int[] rowLoc = new int[2];
-            row.getLocationInWindow(rowLoc);
-            int[] myLoc = new int[2];
-            getLocationInWindow(myLoc);
-
-            float targetX = rowLoc[0] - myLoc[0];
-            float targetY = rowLoc[1] - myLoc[1];
+            float targetX;
+            float targetY;
+            if (row.getParent() instanceof View && ((View) row.getParent()).getParent() == getParent()) {
+                // Sibling container aligned to the indicator: read layout bounds directly so panel scale
+                // or row entrance translation never distorts the pill's initial frame.
+                View rowParent = (View) row.getParent();
+                targetX = rowParent.getLeft() - getLeft() + row.getLeft();
+                targetY = rowParent.getTop() - getTop() + row.getTop();
+            } else {
+                int[] rowLoc = new int[2];
+                row.getLocationInWindow(rowLoc);
+                int[] myLoc = new int[2];
+                getLocationInWindow(myLoc);
+                targetX = rowLoc[0] - myLoc[0];
+                targetY = rowLoc[1] - myLoc[1];
+            }
             float targetW = row.getWidth();
             float targetH = row.getHeight();
 

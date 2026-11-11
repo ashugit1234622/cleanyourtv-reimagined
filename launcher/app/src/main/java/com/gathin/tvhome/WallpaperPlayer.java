@@ -1,5 +1,8 @@
 package com.gathin.tvhome;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -12,6 +15,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -31,12 +36,31 @@ import java.util.concurrent.Executors;
 
 /** Displays and rotates a theme's local wallpaper images while Home is visible. */
 final class WallpaperPlayer {
+    static final long SHOWCASE_FIRST_SWAP_MS = 3_000L;
+    static final long SHOWCASE_INTERVAL_MS = 18_000L;
+    private static final long SHOWCASE_CROSSFADE_MS = 1_000L;
+    private static final float PARALLAX_OVERSCAN = 1.032f;
+    private static final float PARALLAX_MAX_DP = 14f;
+    private static final long PARALLAX_DURATION_MS = 300L;
+    private static final float KEN_BURNS_SCALE = 1.045f;
+    private static final float KEN_BURNS_PAN_X_DP = 12f;
+    private static final float KEN_BURNS_PAN_Y_DP = 6f;
+    private static final long WAKE_RESET_DURATION_MS = 320L;
+    private static final DecelerateInterpolator DECEL_OUT = new DecelerateInterpolator(1.6f);
+    private static final LinearInterpolator LINEAR = new LinearInterpolator();
+
     private final Context context;
     private final FrameLayout root;
-    private final ImageView image;
+    private final FrameLayout backdrop;
+    private ImageView activeView;
+    private ImageView backView;
     private final int backgroundColor;
     private final List<File> files;
     private final long interval;
+    private final boolean themeHasRotation;
+    private boolean wallpaperEnabled;
+    private final boolean animations;
+    private final boolean reducedMotion;
     private final String order;
     private final SharedPreferences preferences;
     private final ExecutorService decoder = Executors.newSingleThreadExecutor();
@@ -49,12 +73,23 @@ final class WallpaperPlayer {
     private final int dimColor;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
+    /** Previous bitmap held during an active crossfade, recycled once the fade finishes or is interrupted. */
+    private Bitmap fadingOut;
     private boolean active;
     private boolean closed;
     private boolean loading;
+    private boolean showcaseRotating;
+    private boolean showcaseChangedWallpaper;
+    private boolean showcaseActive;
+    private float focusParallaxNorm = 0f;
+    private final float density;
+    private ValueAnimator kenBurnsAnimator;
+    private View kenBurnsTarget;
+    private int kenBurnsDir = 1;
     private String displayed = "";
     private String pendingTargetName = null;
     private long changeRequestId = 0;
+    private final Runnable showcaseTick = this::advanceShowcaseWallpaper;
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
     private final TextView caption;
     private final Map<String, String> names;
@@ -71,6 +106,10 @@ final class WallpaperPlayer {
         backgroundColor = config.backgroundColor;
         files = new ArrayList<>(config.wallpapers);
         interval = config.wallpaperRotationMinutes * 60_000L;
+        themeHasRotation = config.wallpaperRotationMinutes > 0;
+        wallpaperEnabled = config.wallpaperEnabled;
+        animations = config.animations;
+        reducedMotion = config.reducedMotion;
         bitmapConfig = config.wallpaperTrueColor ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
         // The dim is painted into the picture (decode), so no full-screen shade layer is drawn on every frame.
         dimColor = config.wallpaperDim > 0 ? (config.wallpaperDim * 255 / 100) << 24 : 0;
@@ -89,16 +128,37 @@ final class WallpaperPlayer {
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         width = metrics.widthPixels;
         height = metrics.heightPixels;
-        image = new ImageView(context);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        density = metrics.density;
+        backdrop = new FrameLayout(context);
+        backdrop.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        activeView = makeLayer(context);
+        backView = makeLayer(context);
+        backView.setVisibility(View.GONE);
+        backView.setAlpha(0f);
+        backdrop.addView(activeView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        backdrop.addView(backView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         names = config.wallpaperCaptions && config.wallpaperEnabled && !files.isEmpty()
                 ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
         caption = names.isEmpty() ? null : makeCaption(context, root);
         if (config.wallpaperEnabled && !files.isEmpty()) {
-            root.addView(image, 0, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            ensureBackdropAdded();
             showFirst();
+        }
+    }
+
+    private static ImageView makeLayer(Context context) {
+        ImageView view = new ImageView(context);
+        view.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return view;
+    }
+
+    private void ensureBackdropAdded() {
+        if (backdrop.getParent() == null) {
+            root.addView(backdrop, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
     }
 
@@ -115,7 +175,7 @@ final class WallpaperPlayer {
         while (first != null) {
             Bitmap bitmap = decode(first);
             if (bitmap != null) {
-                show(bitmap);
+                show(bitmap, false);
                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
                 root.setBackground(null);
                 displayed = first.getName();
@@ -135,10 +195,7 @@ final class WallpaperPlayer {
     void start() {
         active = true;
         if (current == null && !files.isEmpty()) {
-            if (image.getParent() == null) {
-                root.addView(image, 0, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            }
+            ensureBackdropAdded();
             showFirst();
         }
         update();
@@ -149,13 +206,12 @@ final class WallpaperPlayer {
     }
 
     void reload(Config config) {
+        stopShowcaseRotation(false);
+        wallpaperEnabled = config.wallpaperEnabled;
         files.clear();
         files.addAll(config.wallpapers);
         if (config.wallpaperEnabled && !files.isEmpty()) {
-            if (image.getParent() == null) {
-                root.addView(image, 0, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            }
+            ensureBackdropAdded();
             showFirst();
         }
     }
@@ -185,11 +241,14 @@ final class WallpaperPlayer {
                 showNext();
             } else {
                 displayed = "";
+                cancelLayerTransitions();
+                activeView.setImageDrawable(null);
+                backView.setImageDrawable(null);
+                backView.setVisibility(View.GONE);
                 if (current != null) {
                     current.recycle();
                     current = null;
                 }
-                image.setImageBitmap(null);
             }
         }
     }
@@ -250,6 +309,7 @@ final class WallpaperPlayer {
     }
 
     private void displayTarget(File target) {
+        stopShowcaseRotation(false);
         pendingTargetName = target.getName();
         final String targetName = target.getName();
         final long reqId = ++changeRequestId;
@@ -270,11 +330,8 @@ final class WallpaperPlayer {
                     Log.w("TvHome.Wallpaper", "Failed to decode wallpaper: " + targetName);
                     return;
                 }
-                if (image.getParent() == null) {
-                    root.addView(image, 0, new FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                }
-                show(bitmap);
+                ensureBackdropAdded();
+                show(bitmap, animations && !reducedMotion);
                 displayed = targetName;
                 showCaption(true);
                 preferences.edit().putString("image", displayed)
@@ -287,15 +344,30 @@ final class WallpaperPlayer {
 
     void stop() {
         active = false;
+        stopShowcaseRotation(false);
+        setShowcaseActive(false, false);
+        backdrop.animate().cancel();
+        stopKenBurns(false);
     }
 
     /** Drops the wallpaper texture when Home is hidden and Android asks the process to free memory. */
     void releaseForMemoryPressure() {
-        if (current == null) return;
-        image.setImageDrawable(null);
+        stopShowcaseRotation(false);
+        setShowcaseActive(false, false);
+        stopKenBurns(false);
+        backdrop.animate().cancel();
+        resetViewTransform(backdrop);
+        resetViewTransform(activeView);
+        resetViewTransform(backView);
+        if (current == null && fadingOut == null) return;
+        cancelLayerTransitions();
+        activeView.setImageDrawable(null);
+        backView.setImageDrawable(null);
+        backView.setVisibility(View.GONE);
         // The renderer may still have a queued frame that references this hardware bitmap. Drop our references and
         // let Android reclaim its native buffer after rendering releases it instead of recycling it mid-frame.
         current = null;
+        fadingOut = null;
         displayed = "";
         root.setBackgroundColor(backgroundColor);
     }
@@ -314,11 +386,12 @@ final class WallpaperPlayer {
     void close() {
         active = false;
         closed = true;
+        stopShowcaseRotation(false);
         decoder.shutdownNow();
     }
 
     void update() {
-        if (!active || closed || loading || files.isEmpty()) return;
+        if (!active || closed || loading || showcaseRotating || files.isEmpty()) return;
         String previous = preferences.getString("image", "");
         // A picture outside the time of day's group (the group changed) is replaced at once, not after the interval.
         List<File> playable = playable();
@@ -334,7 +407,7 @@ final class WallpaperPlayer {
             Bitmap bitmap = decode(next);
             root.post(() -> {
                 loading = false;
-                if (closed || !active) {
+                if (closed || !active || showcaseRotating) {
                     if (bitmap != null) bitmap.recycle();
                     return;
                 }
@@ -344,12 +417,260 @@ final class WallpaperPlayer {
                     update();
                     return;
                 }
-                show(bitmap);
+                ensureBackdropAdded();
+                show(bitmap, animations && !reducedMotion);
                 displayed = next.getName();
                 showCaption(true);
                 if (!displayed.equals(previous) || changed == 0) {
                     preferences.edit().putString("image", displayed)
                             .putLong("changed", System.currentTimeMillis()).apply();
+                }
+            });
+        });
+    }
+
+    /** Starts shuffled wallpaper showcase rotation (~3s first swap, then ~18s cadence) when >1 image exists. */
+    void startShowcaseRotation() {
+        if (closed || !active || !wallpaperEnabled || showcaseRotating) return;
+        List<File> list = allWallpapers();
+        if (list.size() < 2) return;
+        showcaseRotating = true;
+        showcaseChangedWallpaper = false;
+        backdrop.removeCallbacks(showcaseTick);
+        backdrop.postDelayed(showcaseTick, SHOWCASE_FIRST_SWAP_MS);
+    }
+
+    /**
+     * Stops showcase rotation and cancels any pending decode so a wake-up never switches wallpaper later.
+     * When {@code persistFixedChoice} is true and normal timed rotation is off, the currently kept showcase
+     * wallpaper is also saved as {@link Config#WALLPAPER_CHOICE_KEY} so rebuilds/reboots preserve it.
+     */
+    void stopShowcaseRotation(boolean persistFixedChoice) {
+        backdrop.removeCallbacks(showcaseTick);
+        boolean wasRotating = showcaseRotating;
+        showcaseRotating = false;
+        if (wasRotating) {
+            changeRequestId++;
+        }
+        if (persistFixedChoice && wasRotating && showcaseChangedWallpaper && !themeHasRotation
+                && displayed != null && !displayed.isEmpty()) {
+            SharedPreferences choices = context.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE);
+            if (!"none".equals(choices.getString(Config.WALLPAPER_CHOICE_KEY, null))) {
+                choices.edit().putString(Config.WALLPAPER_CHOICE_KEY, displayed).apply();
+            }
+        }
+        showcaseChangedWallpaper = false;
+    }
+
+    boolean isShowcaseRotating() {
+        return showcaseRotating;
+    }
+
+    /** Subtle column-driven horizontal parallax with safe overscan so edges never uncover. */
+    void setFocusParallax(float normalizedX) {
+        float clamped = Math.max(-1f, Math.min(1f, normalizedX));
+        boolean changed = Math.abs(clamped - focusParallaxNorm) >= 0.001f;
+        focusParallaxNorm = clamped;
+        if (!changed || closed || !active || !wallpaperEnabled || showcaseActive || backdrop.getParent() == null) return;
+        if (!animations || reducedMotion) return;
+        applyFocusParallax(PARALLAX_DURATION_MS, 0f);
+    }
+
+    /** Gentle depth settle when returning to Home after an app or settings screen closes. */
+    void playReturnSettle() {
+        if (closed || !active || !wallpaperEnabled || showcaseActive || backdrop.getParent() == null) return;
+        if (!animations || reducedMotion) return;
+        float restScale = Math.abs(focusParallaxNorm) > 0.001f ? PARALLAX_OVERSCAN : 1f;
+        float maxShift = LauncherMotion.safeParallaxShiftPx(width, PARALLAX_OVERSCAN, PARALLAX_MAX_DP * density);
+        float restTx = -focusParallaxNorm * maxShift;
+        backdrop.animate().cancel();
+        backdrop.setScaleX(restScale + 0.014f);
+        backdrop.setScaleY(restScale + 0.014f);
+        backdrop.setTranslationX(restTx);
+        backdrop.animate()
+                .scaleX(restScale)
+                .scaleY(restScale)
+                .translationX(restTx)
+                .setDuration(240L)
+                .setInterpolator(DECEL_OUT)
+                .start();
+    }
+
+    /** Enables or cleanly unwinds gentle Ken Burns drift for Idle Showcase. */
+    void setShowcaseActive(boolean engaged, boolean animate) {
+        if (showcaseActive == engaged) return;
+        showcaseActive = engaged;
+        if (closed) return;
+        backdrop.animate().cancel();
+        if (engaged) {
+            if (animate && animations && !reducedMotion && backdrop.getParent() != null) {
+                backdrop.animate().scaleX(1f).scaleY(1f).translationX(0f)
+                        .setDuration(WAKE_RESET_DURATION_MS).setInterpolator(DECEL_OUT).start();
+            } else {
+                resetViewTransform(backdrop);
+            }
+            if (animations && !reducedMotion && wallpaperEnabled && active) {
+                startKenBurnsOn(activeView, true);
+            }
+        } else {
+            stopKenBurns(animate && animations && !reducedMotion);
+            if (animations && !reducedMotion && wallpaperEnabled && active && backdrop.getParent() != null
+                    && Math.abs(focusParallaxNorm) > 0.001f) {
+                applyFocusParallax(animate ? WAKE_RESET_DURATION_MS : 0L, 0f);
+            } else if (!animate || !animations || reducedMotion) {
+                resetViewTransform(backdrop);
+            }
+        }
+    }
+
+    private void applyFocusParallax(long durationMs, float extraScale) {
+        boolean hasShift = Math.abs(focusParallaxNorm) > 0.001f;
+        float targetScale = (hasShift ? PARALLAX_OVERSCAN : 1f) + extraScale;
+        float maxShift = LauncherMotion.safeParallaxShiftPx(width, PARALLAX_OVERSCAN, PARALLAX_MAX_DP * density);
+        float targetTx = -focusParallaxNorm * maxShift;
+        backdrop.animate().cancel();
+        if (durationMs <= 0L) {
+            backdrop.setScaleX(targetScale);
+            backdrop.setScaleY(targetScale);
+            backdrop.setTranslationX(targetTx);
+        } else {
+            backdrop.animate()
+                    .scaleX(targetScale)
+                    .scaleY(targetScale)
+                    .translationX(targetTx)
+                    .setDuration(durationMs)
+                    .setInterpolator(DECEL_OUT)
+                    .start();
+        }
+    }
+
+    private void startKenBurnsOn(final View layer, final boolean zoomIn) {
+        cancelKenBurnsAnimator();
+        if (!showcaseActive || closed || !active || !wallpaperEnabled || !animations || reducedMotion || layer == null) {
+            return;
+        }
+        if (zoomIn) {
+            kenBurnsDir = -kenBurnsDir;
+        }
+        final int dir = kenBurnsDir;
+        final float maxPanX = LauncherMotion.safeParallaxShiftPx(width, KEN_BURNS_SCALE, KEN_BURNS_PAN_X_DP * density);
+        final float maxPanY = LauncherMotion.safeParallaxShiftPx(height, KEN_BURNS_SCALE, KEN_BURNS_PAN_Y_DP * density);
+        final float panX = dir * maxPanX;
+        final float panY = -dir * maxPanY;
+        final float fromScale = zoomIn ? 1f : KEN_BURNS_SCALE;
+        final float toScale = zoomIn ? KEN_BURNS_SCALE : 1f;
+        final float fromX = zoomIn ? 0f : panX;
+        final float toX = zoomIn ? panX : 0f;
+        final float fromY = zoomIn ? 0f : panY;
+        final float toY = zoomIn ? panY : 0f;
+
+        kenBurnsTarget = layer;
+        ValueAnimator va = ValueAnimator.ofFloat(0f, 1f);
+        va.setDuration(SHOWCASE_INTERVAL_MS);
+        va.setInterpolator(LINEAR);
+        va.addUpdateListener(anim -> {
+            float t = (float) anim.getAnimatedValue();
+            layer.setScaleX(fromScale + (toScale - fromScale) * t);
+            layer.setScaleY(fromScale + (toScale - fromScale) * t);
+            layer.setTranslationX(fromX + (toX - fromX) * t);
+            layer.setTranslationY(fromY + (toY - fromY) * t);
+        });
+        va.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (kenBurnsAnimator != va) return;
+                kenBurnsAnimator = null;
+                if (showcaseActive && active && !closed && layer == activeView && animations && !reducedMotion) {
+                    // Single-wallpaper showcase continues gently breathing in/out without jumping.
+                    startKenBurnsOn(layer, !zoomIn);
+                }
+            }
+        });
+        kenBurnsAnimator = va;
+        va.start();
+    }
+
+    private void cancelKenBurnsAnimator() {
+        if (kenBurnsAnimator != null) {
+            kenBurnsAnimator.removeAllListeners();
+            kenBurnsAnimator.cancel();
+            kenBurnsAnimator = null;
+        }
+    }
+
+    private void stopKenBurns(boolean animate) {
+        cancelKenBurnsAnimator();
+        View target = kenBurnsTarget != null ? kenBurnsTarget : activeView;
+        kenBurnsTarget = null;
+        if (target == null) return;
+        target.animate().cancel();
+        if (animate && target.getVisibility() == View.VISIBLE) {
+            target.animate()
+                    .scaleX(1f).scaleY(1f).translationX(0f).translationY(0f)
+                    .setDuration(WAKE_RESET_DURATION_MS)
+                    .setInterpolator(DECEL_OUT)
+                    .start();
+        } else {
+            resetViewTransform(target);
+        }
+        if (target != backView) resetViewTransform(backView);
+    }
+
+    private static void resetViewTransform(View v) {
+        if (v == null) return;
+        v.setScaleX(1f);
+        v.setScaleY(1f);
+        v.setTranslationX(0f);
+        v.setTranslationY(0f);
+    }
+
+    View getCaptionView() {
+        return caption;
+    }
+
+    private void advanceShowcaseWallpaper() {
+        if (!showcaseRotating || closed || !active || !wallpaperEnabled) return;
+        if (loading || pendingTargetName != null) {
+            backdrop.postDelayed(showcaseTick, 2_000L);
+            return;
+        }
+        List<File> list = allWallpapers();
+        if (list.size() < 2) {
+            showcaseRotating = false;
+            return;
+        }
+        String currentName = !displayed.isEmpty() ? displayed : preferences.getString("image", "");
+        File selected = WallpaperRotation.pick(list, currentName, WallpaperRotation.ORDER_SHUFFLE, random);
+        if (selected == null || selected.getName().equals(currentName)) {
+            backdrop.postDelayed(showcaseTick, SHOWCASE_INTERVAL_MS);
+            return;
+        }
+        final File next = selected;
+        final String targetName = next.getName();
+        final long reqId = ++changeRequestId;
+        loading = true;
+        decoder.execute(() -> {
+            Bitmap bitmap = decode(next);
+            root.post(() -> {
+                loading = false;
+                if (closed || !active || !showcaseRotating || reqId != changeRequestId) {
+                    if (bitmap != null) bitmap.recycle();
+                    return;
+                }
+                if (bitmap == null) {
+                    Log.w("TvHome.Wallpaper", "Skipping unreadable showcase image: " + targetName);
+                    if (showcaseRotating) backdrop.postDelayed(showcaseTick, 1_000L);
+                    return;
+                }
+                ensureBackdropAdded();
+                show(bitmap, animations);
+                displayed = targetName;
+                showcaseChangedWallpaper = true;
+                showCaption(true);
+                preferences.edit().putString("image", displayed)
+                        .putLong("changed", System.currentTimeMillis()).apply();
+                if (showcaseRotating) {
+                    backdrop.postDelayed(showcaseTick, SHOWCASE_INTERVAL_MS);
                 }
             });
         });
@@ -411,14 +732,93 @@ final class WallpaperPlayer {
         return key.toString();
     }
 
-    /** Puts a picture on screen and releases the previous one after a frame has drawn the new one. */
-    private void show(Bitmap bitmap) {
+    /** Cancels an in-flight crossfade and leaves {@code activeView} holding the newest {@code current} bitmap. */
+    private void cancelLayerTransitions() {
+        cancelKenBurnsAnimator();
+        kenBurnsTarget = null;
+        activeView.animate().setListener(null).cancel();
+        backView.animate().setListener(null).cancel();
+        if (backView.getVisibility() == View.VISIBLE && backView.getDrawable() != null) {
+            backView.setAlpha(1f);
+            ImageView completed = backView;
+            ImageView replaced = activeView;
+            activeView = completed;
+            backView = replaced;
+        }
+        backView.setVisibility(View.GONE);
+        backView.setAlpha(0f);
+        backView.setImageDrawable(null);
+        resetViewTransform(backView);
+        Bitmap oldFading = fadingOut;
+        fadingOut = null;
+        recycleSafely(oldFading);
+    }
+
+    private void recycleSafely(Bitmap bmp) {
+        if (bmp != null && bmp != current && !bmp.isRecycled()) {
+            backdrop.postDelayed(() -> {
+                if (!bmp.isRecycled()) bmp.recycle();
+            }, 500L);
+        }
+    }
+
+    /** Puts a picture on screen (instant or ~1s crossfade) and releases the previous one safely. */
+    private void show(Bitmap bitmap, boolean crossfade) {
+        cancelLayerTransitions();
         Bitmap old = current;
         current = bitmap;
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
-        image.setImageBitmap(bitmap);
-        if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+
+        long fadeMs = !crossfade || !animations || old == null
+                ? 0L
+                : (reducedMotion ? 180L : SHOWCASE_CROSSFADE_MS);
+        if (fadeMs <= 0L) {
+            activeView.setAlpha(1f);
+            resetViewTransform(activeView);
+            activeView.setVisibility(View.VISIBLE);
+            activeView.setImageBitmap(bitmap);
+            backView.setVisibility(View.GONE);
+            backView.setAlpha(0f);
+            backView.setImageDrawable(null);
+            resetViewTransform(backView);
+            if (showcaseActive && animations && !reducedMotion && active) {
+                startKenBurnsOn(activeView, true);
+            }
+            recycleSafely(old);
+            return;
+        }
+
+        // Keep under layer opaque while the new layer fades 0 -> 1 on top so brightness never dips mid-transition.
+        final ImageView under = activeView;
+        final ImageView over = backView;
+        fadingOut = old;
+        under.setAlpha(1f);
+        under.setVisibility(View.VISIBLE);
+        resetViewTransform(over);
+        over.setImageBitmap(bitmap);
+        over.setAlpha(0f);
+        over.setVisibility(View.VISIBLE);
+        over.bringToFront();
+        if (showcaseActive && animations && !reducedMotion && active) {
+            startKenBurnsOn(over, true);
+        }
+        over.animate().alpha(1f).setDuration(fadeMs).setListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                over.animate().setListener(null);
+                if (closed || current != bitmap || over.getDrawable() == null) return;
+                activeView = over;
+                backView = under;
+                under.setVisibility(View.GONE);
+                under.setAlpha(0f);
+                under.setImageDrawable(null);
+                resetViewTransform(under);
+                Bitmap previous = fadingOut;
+                fadingOut = null;
+                recycleSafely(previous);
+            }
+        }).start();
     }
 
     private Bitmap decode(File file) {
