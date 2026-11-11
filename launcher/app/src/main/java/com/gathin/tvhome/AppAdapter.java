@@ -381,6 +381,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     private Drawable loadBanner(PackageManager pm, ResolveInfo ri) {
+        return loadBannerForPackage(ctx, pm, ri);
+    }
+
+    static Drawable loadBannerForPackage(Context ctx, PackageManager pm, ResolveInfo ri) {
         int id = ri.activityInfo.banner;
         if (id == 0) id = ri.activityInfo.applicationInfo.banner;
         Drawable banner = null;
@@ -749,7 +753,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * The colour covering most of an icon, for a card that should read as that app: a small saturated badge
      * (a red "new" corner on a blue icon) must not win, as it can with {@link #vividColor}. Grey if none.
      */
-    private static int dominantColor(Drawable live) {
+    static int dominantColor(Drawable live) {
         if (live == null) return 0xFF6E6E73;
         Drawable d = live.getConstantState() != null ? live.getConstantState().newDrawable().mutate() : live;
         Rect saved = new Rect(d.getBounds());
@@ -794,7 +798,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * square), the card takes that colour, so the mark reads as filling the tile as on tvOS. Otherwise a
      * gradient of the icon's main colour, deepened so the mark stands out. The card clips the corners.
      */
-    private static int[] backdrop(Drawable live, int fallback) {
+    static int[] backdrop(Drawable live, int fallback) {
         int[] plate = iconPlate(live);
         if (plate != null) return plate;
         float[] hsv = new float[3];

@@ -76,6 +76,11 @@ public class HomeKeyService extends AccessibilityService {
     private long powerOnUntil;
     /** home_long_press_home: this service takes every Home press, held ones included. */
     private boolean homeLongPressHome;
+    private boolean homeHoldFired;
+    private final Runnable homeHoldRunnable = () -> {
+        homeHoldFired = true;
+        onHomeLongPressTriggered();
+    };
     /** app_keys "front:" entries, and the package of the activity in front, from window changes while there are any. */
     private Map<Integer, String> frontAppKeys = Collections.emptyMap();
     private Map<Integer, String> frontAppScancodes = Collections.emptyMap();
@@ -138,6 +143,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public void onDestroy() {
         if (running == this) running = null;
+        cancelHomeHold();
         RemoteKeys.release(this);
         stopWaitingForUnlock();
         if (screenOnReceiver != null) unregisterReceiver(screenOnReceiver);
@@ -288,6 +294,11 @@ public class HomeKeyService extends AccessibilityService {
         }
         // home_long_press_home: Android never sees the Home key, so a held press cannot turn into ALL_APPS.
         if (homeLongPressHome && event.getKeyCode() == KeyEvent.KEYCODE_HOME) {
+            if (RecentsPreferences.isEnabled(this)) {
+                handleHomeKeyWithRecents(event);
+                return true;
+            }
+            cancelHomeHold();
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) openHome();
             return true;
         }
@@ -303,6 +314,7 @@ public class HomeKeyService extends AccessibilityService {
     /** Unbound by Android: the user turned the helper off, so Home doesn't put it back (ServiceRepair). */
     @Override
     public boolean onUnbind(Intent intent) {
+        cancelHomeHold();
         RemoteKeys.release(this);
         // Do NOT drop repair record on unbind - standby and reboot trigger unbind.
         return super.onUnbind(intent);
@@ -430,6 +442,48 @@ public class HomeKeyService extends AccessibilityService {
 
     static boolean isShortPress(long downTime, long upTime, long longPressTimeout) {
         return upTime - downTime < longPressTimeout;
+    }
+
+    private void handleHomeKeyWithRecents(KeyEvent event) {
+        int action = event.getAction();
+        if (action == KeyEvent.ACTION_DOWN) {
+            if (event.getRepeatCount() == 0) {
+                handler.removeCallbacks(homeHoldRunnable);
+                homeHoldFired = false;
+                handler.postDelayed(homeHoldRunnable, RemoteKeys.HOLD_MS);
+            }
+        } else if (action == KeyEvent.ACTION_UP) {
+            boolean fired = homeHoldFired;
+            cancelHomeHold();
+            if (!fired && !event.isCanceled()) {
+                openHome();
+            }
+        } else if (action != KeyEvent.ACTION_MULTIPLE) {
+            cancelHomeHold();
+        }
+    }
+
+    private void cancelHomeHold() {
+        handler.removeCallbacks(homeHoldRunnable);
+        homeHoldFired = false;
+    }
+
+    private void onHomeLongPressTriggered() {
+        if (RecentsActivity.isCurrentlyOpen()) {
+            RecentsActivity.dismissIfOpen();
+            return;
+        }
+        try {
+            Intent open = new Intent(this, RecentsActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(RecentsActivity.EXTRA_OPENED_OVER_HOME,
+                            MainActivity.isHomeResumedForOverlay());
+            startActivity(open);
+        } catch (ActivityNotFoundException | SecurityException unavailable) {
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void openHome() {

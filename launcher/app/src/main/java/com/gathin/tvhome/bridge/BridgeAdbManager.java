@@ -11,10 +11,12 @@ import com.tananaev.adblib.AdbConnection;
 import com.tananaev.adblib.AdbCrypto;
 import com.tananaev.adblib.AdbStream;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -39,6 +41,9 @@ public class BridgeAdbManager {
     private static final String HOST = "127.0.0.1";
     private static final int PORT = 5555;
     private static final long AUTO_STOP_MS = 15 * 60 * 1000L; // 15 minutes
+    private static final long DEFAULT_SHELL_TIMEOUT_MS = 4500L;
+    private static final int MAX_SHELL_OUTPUT_BYTES = 512 * 1024;
+    private static final byte[] EMPTY_BYTES = new byte[0];
 
     public enum Status {
         DISABLED,
@@ -279,29 +284,50 @@ public class BridgeAdbManager {
      * @return true if command executed successfully, false otherwise
      */
     public boolean executeShell(String cmd) {
+        return runShellInternal(cmd, DEFAULT_SHELL_TIMEOUT_MS, false) != null;
+    }
+
+    /**
+     * Executes an internal system shell command via loopback ADB and returns its UTF-8 output.
+     * @param cmd Shell command to execute
+     * @param timeoutMs Maximum wait time in milliseconds
+     * @return UTF-8 output string (possibly empty), or null if loopback ADB failed/disconnected
+     */
+    public String executeShellOutput(String cmd, long timeoutMs) {
+        byte[] bytes = runShellInternal(cmd, timeoutMs > 0 ? timeoutMs : DEFAULT_SHELL_TIMEOUT_MS, true);
+        return bytes == null ? null : new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private byte[] runShellInternal(String cmd, long timeoutMs, boolean captureOutput) {
+        if (cmd == null || cmd.isEmpty()) return null;
         checkAutoStop();
         if (!isConnected()) {
             Log.i(TAG, "executeShell: connecting to loopback ADB...");
             if (!connectSync(2500)) {
                 Log.w(TAG, "executeShell: failed to connect to loopback ADB (status: " + status + ")");
-                return false;
+                return null;
             }
         }
 
         synchronized (connectionLock) {
             if (!isConnected()) {
                 Log.w(TAG, "executeShell: ADB not connected after connectSync");
-                return false;
+                return null;
             }
             try {
                 String command = "shell:" + cmd;
                 AdbStream stream = connection.open(command);
+                ByteArrayOutputStream out = captureOutput ? new ByteArrayOutputStream(4096) : null;
                 long start = SystemClock.elapsedRealtime();
                 try {
-                    while (!stream.isClosed() && (SystemClock.elapsedRealtime() - start < 4500)) {
+                    while (!stream.isClosed() && (SystemClock.elapsedRealtime() - start < timeoutMs)) {
                         try {
                             byte[] data = stream.read();
                             if (data == null || data.length == 0) break;
+                            if (out != null && out.size() < MAX_SHELL_OUTPUT_BYTES) {
+                                int toWrite = Math.min(data.length, MAX_SHELL_OUTPUT_BYTES - out.size());
+                                out.write(data, 0, toWrite);
+                            }
                         } catch (IOException e) {
                             break;
                         }
@@ -312,13 +338,13 @@ public class BridgeAdbManager {
                 } catch (Exception ignored) {}
                 lastActivityTime = SystemClock.elapsedRealtime();
                 Log.i(TAG, "executeShell completed: " + cmd);
-                return true;
+                return out != null ? out.toByteArray() : EMPTY_BYTES;
             } catch (Exception ex) {
                 Log.e(TAG, "executeShell failed for cmd: " + cmd, ex);
                 status = Status.ERROR;
                 lastError = ex.getMessage();
                 closeQuietly();
-                return false;
+                return null;
             }
         }
     }

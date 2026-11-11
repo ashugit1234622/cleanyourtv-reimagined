@@ -46,6 +46,7 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView advancedChoice;
     private TextView appLaunchChoice;
     private TextView introSettingsChoice;
+    private TextView recentAppsHomeChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
     private int columns;
@@ -224,6 +225,18 @@ public final class LauncherSettingsActivity extends Activity {
             return false;
         });
 
+        recentAppsHomeChoice = findViewById(R.id.recentAppsHomeChoice);
+        recentAppsHomeChoice.setOnClickListener(v -> toggleRecentAppsHome());
+        recentAppsHomeChoice.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                toggleRecentAppsHome();
+                v.playSoundEffect(android.view.SoundEffectConstants.CLICK);
+                return true;
+            }
+            return false;
+        });
+
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
         if (config.openOnStartChoice) {
             openOnStartChoice.setVisibility(View.VISIBLE);
@@ -238,6 +251,7 @@ public final class LauncherSettingsActivity extends Activity {
                     .remove(Config.WALLPAPER_ROTATION_KEY).remove(Config.IDLE_SHOWCASE_KEY)
                     .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY);
             AppLaunchSettings.clearKeys(resetEditor);
+            RecentsPreferences.clearChoice(resetEditor);
             resetEditor.commit();
             getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).edit().clear().apply();
             Config current = Config.load(this);
@@ -433,6 +447,9 @@ public final class LauncherSettingsActivity extends Activity {
         IntroSettings intro = IntroSettings.load(this, currentConfig);
         introSettingsChoice.setText(getString(R.string.intro_settings_state,
                 getString(intro.bootIntro ? R.string.on : R.string.off)));
+        boolean recentsHome = RecentsPreferences.isEnabled(this);
+        recentAppsHomeChoice.setText(getString(R.string.recents_home_setting_state,
+                getString(recentsHome ? R.string.on : R.string.off)));
         String wallpaperCurrent = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
         wallpaperChoice.setText(getString(R.string.wallpaper_state,
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
@@ -452,7 +469,15 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains(Config.DOCK_OPACITY_KEY) || choices.contains(Config.CLOCK_FORMAT_KEY)
                 || choices.contains(OpenOnStart.KEY)
                 || AppLaunchSettings.hasCustomChoices(choices)
+                || RecentsPreferences.hasCustomChoice(choices)
                 || !getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).getAll().isEmpty();
+    }
+
+    private void toggleRecentAppsHome() {
+        boolean next = !RecentsPreferences.isEnabled(this);
+        RecentsPreferences.setEnabled(this, next);
+        changed();
+        refresh();
     }
 
     private String formatAppLaunchSummary(AppLaunchSettings s, boolean animationsOn, boolean reduced) {

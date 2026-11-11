@@ -2370,6 +2370,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    static boolean isHomeResumedForOverlay() {
+        MainActivity act = activeInstance;
+        return act != null && act.resumed && !act.stopped && !act.isFinishing() && !act.isDestroyed();
+    }
+
     public static boolean playCustomIntro(Context ctx, String title, String subtitle, String anim, int holdMs) {
         if (ctx == null) ctx = activeInstance;
         if (ctx == null) return false;

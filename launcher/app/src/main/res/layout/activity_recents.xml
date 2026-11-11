@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/recentsScrim"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#D8070A0F"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:id="@+id/recentsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="40dp"
+        android:paddingBottom="34dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Header pill bar: title + live free/total RAM -->
+        <LinearLayout
+            android:id="@+id/recentsHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/recents_header_glass"
+            android:paddingStart="24dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:elevation="8dp">
+
+            <TextView
+                android:id="@+id/recentsTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/recents_title"
+                android:textColor="#FFFFFFFF"
+                android:textSize="20sp"
+                android:fontFamily="@string/font_medium" />
+
+            <TextView
+                android:id="@+id/recentsMemBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:background="@drawable/recents_ram_pill_bg"
+                android:textColor="#FFE4F1FF"
+                android:textSize="14sp"
+                android:fontFamily="@string/font_medium"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Center carousel or loading/empty/feedback state -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recentsList"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:paddingStart="48dp"
+                android:paddingEnd="48dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:descendantFocusability="afterDescendants"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/recentsStateCard"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:background="@drawable/recents_header_glass"
+                android:paddingStart="36dp"
+                android:paddingEnd="36dp"
+                android:paddingTop="28dp"
+                android:paddingBottom="28dp"
+                android:elevation="8dp">
+
+                <ProgressBar
+                    android:id="@+id/recentsProgress"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginBottom="14dp"
+                    android:indeterminate="true" />
+
+                <TextView
+                    android:id="@+id/recentsStateTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/recents_loading"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="19sp"
+                    android:fontFamily="@string/font_medium" />
+
+                <TextView
+                    android:id="@+id/recentsStateSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="14sp"
+                    android:fontFamily="@string/font_body"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/recentsRetryBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="18dp"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    android:gravity="center"
+                    android:background="@drawable/recents_action_pill_bg"
+                    android:textColor="@drawable/pill_text"
+                    android:textSize="15sp"
+                    android:fontFamily="@string/font_medium"
+                    android:text="@string/recents_retry"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/recentsFeedbackBanner"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:background="@drawable/recents_header_glass"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="17sp"
+                android:fontFamily="@string/font_medium"
+                android:elevation="12dp"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Explicit Close App & Close All controls below carousel -->
+        <LinearLayout
+            android:id="@+id/recentsActions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/btnCloseApp"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:paddingStart="26dp"
+                android:paddingEnd="26dp"
+                android:gravity="center"
+                android:background="@drawable/recents_action_pill_bg"
+                android:textColor="@drawable/pill_text"
+                android:textSize="15sp"
+                android:fontFamily="@string/font_medium"
+                android:text="@string/recents_close_app"
+                android:focusable="true"
+                android:clickable="true"
+                android:nextFocusLeft="@+id/btnCloseApp"
+                android:nextFocusRight="@+id/btnCloseAll"
+                android:nextFocusDown="@+id/btnCloseApp" />
+
+            <TextView
+                android:id="@+id/btnCloseAll"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="18dp"
+                android:paddingStart="26dp"
+                android:paddingEnd="26dp"
+                android:gravity="center"
+                android:background="@drawable/recents_action_pill_bg"
+                android:textColor="@drawable/pill_text"
+                android:textSize="15sp"
+                android:fontFamily="@string/font_medium"
+                android:text="@string/recents_close_all"
+                android:focusable="true"
+                android:clickable="true"
+                android:nextFocusLeft="@+id/btnCloseApp"
+                android:nextFocusRight="@+id/btnCloseAll"
+                android:nextFocusDown="@+id/btnCloseAll" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/recentsHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/recents_hint_controls"
+            android:textColor="#B8FFFFFF"
+            android:textSize="13sp"
+            android:fontFamily="@string/font_body" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/launchCurtain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:elevation="24dp"
+        android:alpha="0"
+        android:visibility="invisible"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no">
+
+        <ImageView
+            android:id="@+id/launchCurtainArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:alpha="0"
+            android:visibility="invisible"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
+</FrameLayout>
+

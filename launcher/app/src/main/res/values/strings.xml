@@ -273,4 +273,20 @@
     <string name="system_boost">Memory &amp; Storage Boost</string>
     <string name="remote_battery">Remote</string>
     <string name="audio_accessory">Audio</string>
+
+    <!-- Recent Apps overlay -->
+    <string name="recents_title">Recent Apps</string>
+    <string name="recents_loading">Checking running apps…</string>
+    <string name="recents_empty_title">No apps running</string>
+    <string name="recents_empty_hint">Press Back or Home to return</string>
+    <string name="recents_adb_offline">Could not connect to local TV process service</string>
+    <string name="recents_retry">Retry</string>
+    <string name="recents_close_app">Close App</string>
+    <string name="recents_close_all">Close All</string>
+    <string name="recents_ram_label">%1$s RAM</string>
+    <string name="recents_freed_summary">Closed %1$d apps · Freed ~%2$d MB</string>
+    <string name="recents_freed_single">Closed %1$s · Freed ~%2$d MB</string>
+    <string name="recents_hint_controls">OK: Switch app  ·  Down: Close options  ·  Back: Exit</string>
+    <string name="recents_home_setting_state">Long-press Home: Recent apps · %1$s</string>
+    <string name="recents_home_setting_help">Hold Home button from anywhere to view RAM, switch apps, or force-close running apps</string>
 </resources>
