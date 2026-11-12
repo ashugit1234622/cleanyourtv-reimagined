@@ -707,6 +707,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return -1;
     }
 
+    /** First dock/grid position belonging to {@code pkg}, or -1 when absent. */
+    int positionOfPackage(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return -1;
+        for (int i = 0; i < items.size(); i++) {
+            if (pkg.equals(items.get(i).pkg)) return i;
+        }
+        return -1;
+    }
+
     /** Dock slots that hold an app: the whole dock unless some slots are empty. */
     int dockFilled() {
         return emptySlots > 0 ? docked : dockSize;

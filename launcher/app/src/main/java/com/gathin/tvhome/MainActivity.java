@@ -144,7 +144,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private long idleClockMs;
     /** Back on Home opens ClockActivity (config.xml, back_opens_clock). */
     private boolean backOpensClock;
-    private final Runnable showIdleClock = () -> startActivity(new Intent(this, ClockActivity.class));
+    private final Runnable showIdleClock = () -> {
+        clearCloseTarget();
+        startActivity(new Intent(this, ClockActivity.class));
+    };
     private IdleShowcaseController idleShowcase;
     private String liveTvAction;
     private String liveTvInputId;
@@ -204,6 +207,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float pendingHeroRestY = Float.NaN;
     private HeaderFocusIndicator headerFocus;
     private boolean stoppedBefore;
+    private boolean suppressNextCloseForWake;
+    private boolean pendingHomeCloseReturn;
+    private String pendingHomeClosePkg;
+    private boolean closeOriginPending;
+    private String closeOriginKey;
+    private String closeOriginPkg;
+    private int closeOriginViewId = View.NO_ID;
+    private float[] closeOriginRelBounds;
+    private int closeScheduleGen;
+    private Runnable pendingCloseSchedule;
     private interface RowAction {
         void run(float[] screenBounds);
     }
@@ -339,6 +352,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             SharedPreferences prefs = context.getSharedPreferences(BootIntro.PREFS_NAME, Context.MODE_PRIVATE);
             if ("android.intent.action.DREAMING_STARTED".equals(action)) {
                 isDreaming = true;
+                suppressNextCloseForWake = true;
                 BootIntro.notifyDreamStarted();
                 prefs.edit().putBoolean(BootIntro.KEY_DREAMING_PERSISTED, true)
                         .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
@@ -347,6 +361,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             } else if (Intent.ACTION_SCREEN_ON.equals(action)
                     || Intent.ACTION_USER_PRESENT.equals(action)
                     || "android.intent.action.DREAMING_STOPPED".equals(action)) {
+                suppressNextCloseForWake = true;
                 if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) {
                     BootIntro.clearDreamState();
                     prefs.edit().putBoolean(BootIntro.KEY_PENDING_WAKE, false)
@@ -364,6 +379,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 wasNonInteractive = true;
+                suppressNextCloseForWake = true;
                 prefs.edit().putBoolean(BootIntro.KEY_SCREEN_OFF_PERSISTED, true)
                         .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
                         .putBoolean(BootIntro.KEY_WAS_NON_INTERACTIVE, true)
@@ -563,6 +579,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        LauncherMotion.ensureInternalUiTracker(getApplication());
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
@@ -1344,6 +1361,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         );
 
         // Reset memory & persisted flags once evaluated
+        if (decision.woke || isDreaming || wasNonInteractive || screenWokeUp || dreamRan
+                || persistedDreaming || persistedScreenOff || persistedNonInteractive) {
+            suppressNextCloseForWake = true;
+        }
         isDreaming = false;
         wasNonInteractive = false;
         screenWokeUp = false;
@@ -1685,6 +1706,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private boolean startLauncherSettingsForResult(boolean curtainApplied, Runnable onFail) {
+        clearCloseTarget();
         try {
             startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
             if (curtainApplied) {
@@ -1765,6 +1787,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLibraryIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (intent.getBooleanExtra(LauncherMotion.EXTRA_HOME_CLOSE_RETURN, false)) {
+            pendingHomeCloseReturn = true;
+            pendingHomeClosePkg = intent.getStringExtra(LauncherMotion.EXTRA_CLOSE_RETURN_PACKAGE);
+        }
         if (curtainController != null && curtainController.isBusy()) {
             onResumeLaunchCleanup();
         }
@@ -1893,17 +1919,298 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (deviceMonitor != null) {
             deviceMonitor.start(this::updateDeviceAccessories);
         }
-        updateStatsView();
-        if (LauncherMotion.shouldPlayReturnSettle(
+        appLaunchSettings = AppLaunchSettings.load(this);
+        boolean homeCloseReturn = pendingHomeCloseReturn;
+        String homeClosePkg = pendingHomeClosePkg;
+        pendingHomeCloseReturn = false;
+        pendingHomeClosePkg = null;
+
+        boolean suppressWakeOrDream = suppressNextCloseForWake;
+        suppressNextCloseForWake = false;
+        boolean internalReturn = LauncherMotion.consumeInternalOpaqueReturn();
+
+        boolean hasCloseTarget = closeOriginPending;
+        String closeKey = closeOriginKey;
+        String closePkg = closeOriginPkg;
+        int closeViewId = closeOriginViewId;
+        float[] closeFallbackRelBounds = closeOriginRelBounds;
+        if (returningFromStop) {
+            clearCloseTarget();
+            if (homeCloseReturn && homeClosePkg != null && !homeClosePkg.isEmpty()
+                    && !getPackageName().equals(homeClosePkg)) {
+                if (!hasCloseTarget) {
+                    hasCloseTarget = true;
+                    closeKey = null;
+                    closePkg = homeClosePkg;
+                    closeViewId = View.NO_ID;
+                    closeFallbackRelBounds = null;
+                } else if (closePkg == null || !closePkg.equals(homeClosePkg)) {
+                    closeKey = null;
+                    closePkg = homeClosePkg;
+                    closeViewId = View.NO_ID;
+                    closeFallbackRelBounds = null;
+                }
+            } else if (homeCloseReturn && homeClosePkg != null && getPackageName().equals(homeClosePkg)) {
+                internalReturn = true;
+            }
+        }
+
+        boolean shouldPlayClose = LauncherMotion.shouldPlayCloseCurtain(
                 returningFromStop,
-                refreshAction == TileRefresh.Action.REBUILD || deferReloadAppsUntilReveal,
+                hasCloseTarget,
+                appLaunchSettings.closeEnabled,
                 animations,
                 reducedMotion,
+                suppressWakeOrDream,
                 bootIntroOverlay != null && bootIntroOverlay.isPlaying(),
                 openPopup != null,
-                idleShowcase != null && idleShowcase.isEngaged())) {
-            playReturnToHomeSettle();
+                idleShowcase != null && idleShowcase.isEngaged(),
+                internalReturn);
+        android.util.Log.d("LaunchCurtain", "onResume returningFromStop=" + returningFromStop
+                + " homeClose=" + homeCloseReturn + "(" + homeClosePkg + ")"
+                + " hasClose=" + hasCloseTarget + " key=" + closeKey + " pkg=" + closePkg
+                + " viewId=" + closeViewId + " wakeSuppress=" + suppressWakeOrDream
+                + " internalReturn=" + internalReturn + " shouldPlayClose=" + shouldPlayClose);
+
+        updateStatsView();
+        if (shouldPlayClose && curtainController != null) {
+            cancelReturnSettle();
+            curtainController.holdForCloseReturn(appLaunchSettings);
+            scheduleCloseCurtainAfterLayout(
+                    closeKey, closePkg, closeViewId, closeFallbackRelBounds,
+                    appLaunchSettings, homeCloseReturn);
+        } else {
+            HomeKeyService.notifyHomeCurtainReadyAndRun(null);
+            if (LauncherMotion.shouldPlayReturnSettle(
+                    returningFromStop,
+                    refreshAction == TileRefresh.Action.REBUILD || deferReloadAppsUntilReveal,
+                    animations,
+                    reducedMotion,
+                    bootIntroOverlay != null && bootIntroOverlay.isPlaying(),
+                    openPopup != null,
+                    idleShowcase != null && idleShowcase.isEngaged())) {
+                playReturnToHomeSettle();
+            }
         }
+    }
+
+    private void cancelPendingCloseSchedule() {
+        closeScheduleGen++;
+        if (pendingCloseSchedule != null && root != null) {
+            root.removeCallbacks(pendingCloseSchedule);
+        }
+        pendingCloseSchedule = null;
+    }
+
+    private void scheduleCloseCurtainAfterLayout(final String targetKey, final String targetPkg,
+                                                 final int anchorViewId, final float[] fallbackRelBounds,
+                                                 final AppLaunchSettings launchCfg,
+                                                 final boolean homeCloseReturn) {
+        cancelPendingCloseSchedule();
+        if (root == null || curtainController == null) {
+            HomeKeyService.notifyHomeCurtainReadyAndRun(null);
+            if (curtainController != null) curtainController.clearImmediate();
+            return;
+        }
+        final int gen = ++closeScheduleGen;
+        final long settleDelayMs = LauncherMotion.closeScheduleSettleDelayMs(homeCloseReturn);
+        final Runnable playNow = () -> {
+            if (pendingCloseSchedule != null && root != null) {
+                pendingCloseSchedule = null;
+            }
+            if (gen != closeScheduleGen || curtainController == null
+                    || !started || !resumed || isFinishing() || isDestroyed()) {
+                if (curtainController != null && curtainController.isClosingWaitingStart()) {
+                    curtainController.clearImmediate();
+                }
+                return;
+            }
+            curtainController.restoreDepthForCloseMeasurement(launchCfg);
+            View targetView = findCloseTargetView(targetKey, targetPkg, anchorViewId);
+            float[] fallback = resolveCloseFallbackBounds(
+                    targetKey, targetView, anchorViewId, fallbackRelBounds);
+            curtainController.playCloseCurtain(targetView, fallback, launchCfg, null);
+        };
+        final Runnable runShrink = () -> {
+            if (gen != closeScheduleGen || curtainController == null
+                    || !started || !resumed || isFinishing() || isDestroyed()) {
+                HomeKeyService.notifyHomeCurtainReadyAndRun(null);
+                if (curtainController != null && curtainController.isClosingWaitingStart()) {
+                    curtainController.clearImmediate();
+                }
+                return;
+            }
+            HomeKeyService.notifyHomeCurtainReadyAndRun(() -> {
+                if (gen != closeScheduleGen || curtainController == null
+                        || !started || !resumed || isFinishing() || isDestroyed()) {
+                    return;
+                }
+                if (settleDelayMs > 0L && root != null) {
+                    pendingCloseSchedule = playNow;
+                    root.postDelayed(playNow, settleDelayMs);
+                } else {
+                    playNow.run();
+                }
+            });
+        };
+        final ViewTreeObserver vto = root.getViewTreeObserver();
+        final boolean[] preDrawFired = new boolean[1];
+        if (vto.isAlive()) {
+            final ViewTreeObserver.OnPreDrawListener preDraw = new ViewTreeObserver.OnPreDrawListener() {
+                @Override
+                public boolean onPreDraw() {
+                    ViewTreeObserver current = root != null ? root.getViewTreeObserver() : null;
+                    if (current != null && current.isAlive()) {
+                        current.removeOnPreDrawListener(this);
+                    }
+                    preDrawFired[0] = true;
+                    if (pendingCloseSchedule != null && root != null) {
+                        root.removeCallbacks(pendingCloseSchedule);
+                        pendingCloseSchedule = null;
+                    }
+                    if (gen != closeScheduleGen || !started || !resumed || isFinishing() || isDestroyed()) {
+                        HomeKeyService.notifyHomeCurtainReadyAndRun(null);
+                        return true;
+                    }
+                    pendingCloseSchedule = runShrink;
+                    root.postOnAnimation(runShrink);
+                    return true;
+                }
+            };
+            vto.addOnPreDrawListener(preDraw);
+            Runnable fallbackTimer = () -> {
+                if (preDrawFired[0]) return;
+                ViewTreeObserver current = root != null ? root.getViewTreeObserver() : null;
+                if (current != null && current.isAlive()) {
+                    current.removeOnPreDrawListener(preDraw);
+                }
+                pendingCloseSchedule = null;
+                runShrink.run();
+            };
+            pendingCloseSchedule = fallbackTimer;
+            root.postDelayed(fallbackTimer, 60L);
+        } else {
+            pendingCloseSchedule = runShrink;
+            root.postOnAnimation(runShrink);
+        }
+    }
+
+    private View findCloseTargetView(String key, String pkg, int anchorViewId) {
+        if (anchorViewId != View.NO_ID) {
+            View pill = findViewById(anchorViewId);
+            if (isViewVisibleInRoot(pill)) {
+                return pill;
+            }
+        }
+        if (key != null && adapter != null && grid != null) {
+            int pos = adapter.positionOf(key);
+            if (pos >= 0) {
+                RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+                View card = vh != null ? vh.itemView.findViewById(R.id.card) : null;
+                if (isViewVisibleInRoot(card)) {
+                    return card;
+                }
+            }
+        }
+        if (pkg != null && !pkg.isEmpty() && adapter != null && grid != null) {
+            int pos = adapter.positionOfPackage(pkg);
+            if (pos >= 0) {
+                RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+                View card = vh != null ? vh.itemView.findViewById(R.id.card) : null;
+                if (isViewVisibleInRoot(card)) {
+                    return card;
+                }
+            }
+        }
+        return null;
+    }
+
+    private float[] resolveCloseFallbackBounds(String key, View targetView, int anchorViewId,
+                                               float[] storedRelBounds) {
+        if (targetView != null) {
+            return null;
+        }
+        int rootW = root != null ? root.getWidth() : 0;
+        int rootH = root != null ? root.getHeight() : 0;
+        if (anchorViewId != View.NO_ID && storedRelBounds != null) {
+            return storedRelBounds;
+        }
+        if (key != null) {
+            return LauncherMotion.computeCloseFallbackBounds(rootW, rootH);
+        }
+        return storedRelBounds != null ? storedRelBounds
+                : LauncherMotion.computeCloseFallbackBounds(rootW, rootH);
+    }
+
+    private boolean isViewVisibleInRoot(View v) {
+        if (v == null || root == null || !v.isAttachedToWindow()
+                || v.getVisibility() != View.VISIBLE || v.getWidth() <= 0 || v.getHeight() <= 0) {
+            return false;
+        }
+        float[] local = LauncherMotion.screenToLocalBounds(LauncherMotion.captureScreenBounds(v), root);
+        if (local == null) return false;
+        int rootW = root.getWidth();
+        int rootH = root.getHeight();
+        return local[0] >= local[2] * 0.25f && local[0] <= rootW - local[2] * 0.25f
+                && local[1] >= local[3] * 0.25f && local[1] <= rootH - local[3] * 0.25f;
+    }
+
+    private void recordCloseOriginForIntent(Intent intent, int anchorViewId, float[] relBounds) {
+        if (intent == null) return;
+        String pkg = resolveTargetPackage(intent);
+        if (getPackageName().equals(pkg)) {
+            clearCloseTarget();
+            return;
+        }
+        recordCloseTarget(null, pkg, anchorViewId, relBounds);
+    }
+
+    private void recordCloseTarget(String key, String pkg, int viewId, float[] relBounds) {
+        LauncherMotion.clearInternalOpaqueReturn();
+        closeOriginPending = true;
+        closeOriginKey = key;
+        closeOriginPkg = pkg;
+        closeOriginViewId = viewId;
+        closeOriginRelBounds = relBounds;
+    }
+
+    private void clearCloseTarget() {
+        closeOriginPending = false;
+        closeOriginKey = null;
+        closeOriginPkg = null;
+        closeOriginViewId = View.NO_ID;
+        closeOriginRelBounds = null;
+    }
+
+    static void recordExternalCloseTarget(Intent intent, int anchorViewId) {
+        MainActivity act = activeInstance;
+        if (act == null || intent == null) return;
+        act.recordCloseOriginForIntent(intent, anchorViewId, null);
+    }
+
+    static void clearExternalCloseTarget() {
+        MainActivity act = activeInstance;
+        if (act != null) {
+            act.clearCloseTarget();
+        }
+    }
+
+    private String resolveTargetPackage(Intent intent) {
+        if (intent == null) return null;
+        if (intent.getComponent() != null) {
+            return intent.getComponent().getPackageName();
+        }
+        if (intent.getPackage() != null) {
+            return intent.getPackage();
+        }
+        try {
+            ResolveInfo ri = getPackageManager().resolveActivity(intent, 0);
+            if (ri != null && ri.activityInfo != null) {
+                return ri.activityInfo.packageName;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
     }
 
     private void playReturnToHomeSettle() {
@@ -2137,10 +2444,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        cancelPendingCloseSchedule();
         onPauseLaunchCleanup();
         cancelReturnSettle();
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        if (pm != null && !pm.isInteractive()) wasNonInteractive = true;
+        if (pm != null && !pm.isInteractive()) {
+            wasNonInteractive = true;
+            suppressNextCloseForWake = true;
+        }
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -2173,7 +2484,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onStop();
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         boolean nonInteractive = pm != null && !pm.isInteractive();
-        if (nonInteractive) wasNonInteractive = true;
+        if (nonInteractive) {
+            wasNonInteractive = true;
+            suppressNextCloseForWake = true;
+        }
+        cancelPendingCloseSchedule();
         SharedPreferences prefs = getSharedPreferences(BootIntro.PREFS_NAME, MODE_PRIVATE);
         prefs.edit().putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
                 .putLong(BootIntro.KEY_LAST_STOP_WALL_TIME, System.currentTimeMillis())
@@ -2229,6 +2544,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        cancelPendingCloseSchedule();
         resetLaunchPulse();
         RemoteKeys.release(this);
         cancelHoldOk();
@@ -2939,7 +3255,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         // Home screen: Back goes nowhere, unless back_opens_clock is on.
-        if (backOpensClock) startActivity(new Intent(this, ClockActivity.class));
+        if (backOpensClock) {
+            clearCloseTarget();
+            startActivity(new Intent(this, ClockActivity.class));
+        }
     }
 
     // ---- glass highlight -------------------------------------------------------------------------
@@ -2988,20 +3307,43 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             commit.run(false);
             return;
         }
-        launchWithCurtain(card, null, false, commit);
+        int pos = RecyclerView.NO_POSITION;
+        if (grid != null) {
+            RecyclerView.ViewHolder vh = grid.findContainingViewHolder(card);
+            if (vh != null) pos = vh.getBindingAdapterPosition();
+        }
+        final String key = pos >= 0 && adapter != null ? adapter.keyAt(pos) : null;
+        final String pkg = pos >= 0 && adapter != null ? adapter.packageAt(pos) : null;
+        final float[] relBounds = LauncherMotion.screenToLocalBounds(
+                LauncherMotion.captureScreenBounds(card), root);
+        AppAdapter.LaunchCommit wrapped = curtainApplied -> {
+            if (getPackageName().equals(pkg)) {
+                clearCloseTarget();
+            } else {
+                recordCloseTarget(key, pkg, View.NO_ID, relBounds);
+            }
+            boolean launched = commit.run(curtainApplied);
+            if (!launched) {
+                clearCloseTarget();
+            }
+            return launched;
+        };
+        launchWithCurtain(card, null, false, wrapped);
     }
 
     /** Launches an app from screen-space card bounds (used when closing overlay dialogs like All Apps). */
     void launchIntentFromScreenBounds(float screenCenterX, float screenCenterY, float width, float height,
                                       Intent intent, Runnable onCantOpen) {
+        float[] screenBounds = new float[] { screenCenterX, screenCenterY, width, height };
+        float[] relBounds = LauncherMotion.screenToLocalBounds(screenBounds, root);
+        recordCloseOriginForIntent(intent, View.NO_ID, relBounds);
         AppAdapter.LaunchCommit commit = curtainApplied ->
                 startIntentWithTransition(intent, curtainApplied, false, onCantOpen);
         if (curtainController == null) {
             commit.run(false);
             return;
         }
-        curtainController.launchFromScreenBounds(
-                new float[] { screenCenterX, screenCenterY, width, height }, false, commit);
+        curtainController.launchFromScreenBounds(screenBounds, false, commit);
     }
 
     private boolean startIntentWithTransition(Intent intent, boolean curtainApplied,
@@ -3016,6 +3358,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             return true;
         } catch (ActivityNotFoundException | SecurityException e) {
+            clearCloseTarget();
             if (onFail != null) onFail.run();
             return false;
         }
@@ -4869,6 +5212,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
         Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        int viewId = sourceView != null ? sourceView.getId() : View.NO_ID;
+        float[] relBounds = sourceView != null
+                ? LauncherMotion.screenToLocalBounds(LauncherMotion.captureScreenBounds(sourceView), root)
+                : null;
+        recordCloseOriginForIntent(i, viewId, relBounds);
         AppAdapter.LaunchCommit commit = curtainApplied ->
                 startIntentWithTransition(i, curtainApplied, true, onNotAvailable);
         launchWithCurtain(sourceView, null, true, commit);
@@ -4883,6 +5231,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
         Runnable onNotAvailable = () -> Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        recordCloseOriginForIntent(i, View.NO_ID, LauncherMotion.screenToLocalBounds(screenBounds, root));
         AppAdapter.LaunchCommit commit = curtainApplied ->
                 startIntentWithTransition(i, curtainApplied, true, onNotAvailable);
         if (curtainController != null) {
@@ -4950,12 +5299,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
 
+        float[] inputRelBounds = LauncherMotion.screenToLocalBounds(screenBounds, root);
         AppAdapter.LaunchCommit commit = curtainApplied -> {
             for (Intent cand : candidates) {
+                recordCloseOriginForIntent(cand, View.NO_ID, inputRelBounds);
                 if (startIntentWithTransition(cand, curtainApplied, true, null)) {
                     return true;
                 }
             }
+            clearCloseTarget();
             Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
             return false;
         };

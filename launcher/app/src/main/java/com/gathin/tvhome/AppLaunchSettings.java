@@ -14,6 +14,7 @@ import java.util.Locale;
 public final class AppLaunchSettings {
 
     public static final String KEY_ENABLED = "app_launch_anim_enabled";
+    public static final String KEY_CLOSE_ENABLED = "app_close_anim_enabled";
     public static final String KEY_SPEED = "app_launch_speed";
     public static final String KEY_EASING = "app_launch_easing";
     public static final String KEY_CARD_MORPH = "app_launch_card_morph";
@@ -55,6 +56,7 @@ public final class AppLaunchSettings {
     };
 
     public final boolean enabled;
+    public final boolean closeEnabled;
     public final String speed;
     public final String easing;
     public final boolean cardMorph;
@@ -62,9 +64,10 @@ public final class AppLaunchSettings {
     public final boolean roundedCorners;
     public final String appReveal;
 
-    private AppLaunchSettings(boolean enabled, String speed, String easing, boolean cardMorph,
-                              String bgDepth, boolean roundedCorners, String appReveal) {
+    private AppLaunchSettings(boolean enabled, boolean closeEnabled, String speed, String easing,
+                              boolean cardMorph, String bgDepth, boolean roundedCorners, String appReveal) {
         this.enabled = enabled;
+        this.closeEnabled = closeEnabled;
         this.speed = normalize(SPEEDS, speed, SPEED_NORMAL);
         this.easing = normalize(EASINGS, easing, EASING_IOS_IN_OUT);
         this.cardMorph = cardMorph;
@@ -74,14 +77,20 @@ public final class AppLaunchSettings {
     }
 
     public static AppLaunchSettings defaults() {
-        return new AppLaunchSettings(true, SPEED_NORMAL, EASING_IOS_IN_OUT, true,
+        return new AppLaunchSettings(true, true, SPEED_NORMAL, EASING_IOS_IN_OUT, true,
                 DEPTH_MEDIUM, true, REVEAL_ZOOM_FADE);
     }
 
     public static AppLaunchSettings fromValues(boolean enabled, String speed, String easing,
                                              boolean cardMorph, String bgDepth,
                                              boolean roundedCorners, String appReveal) {
-        return new AppLaunchSettings(enabled, speed, easing, cardMorph, bgDepth,
+        return fromValues(enabled, true, speed, easing, cardMorph, bgDepth, roundedCorners, appReveal);
+    }
+
+    public static AppLaunchSettings fromValues(boolean enabled, boolean closeEnabled, String speed,
+                                             String easing, boolean cardMorph, String bgDepth,
+                                             boolean roundedCorners, String appReveal) {
+        return new AppLaunchSettings(enabled, closeEnabled, speed, easing, cardMorph, bgDepth,
                 roundedCorners, appReveal);
     }
 
@@ -94,6 +103,7 @@ public final class AppLaunchSettings {
         SharedPreferences p = prefs(ctx);
         return fromValues(
                 p.getBoolean(KEY_ENABLED, true),
+                p.getBoolean(KEY_CLOSE_ENABLED, true),
                 p.getString(KEY_SPEED, SPEED_NORMAL),
                 p.getString(KEY_EASING, EASING_IOS_IN_OUT),
                 p.getBoolean(KEY_CARD_MORPH, true),
@@ -246,6 +256,7 @@ public final class AppLaunchSettings {
     public static boolean hasCustomChoices(SharedPreferences choices) {
         if (choices == null) return false;
         return choices.contains(KEY_ENABLED)
+                || choices.contains(KEY_CLOSE_ENABLED)
                 || choices.contains(KEY_SPEED)
                 || choices.contains(KEY_EASING)
                 || choices.contains(KEY_CARD_MORPH)
@@ -257,6 +268,7 @@ public final class AppLaunchSettings {
     public static void clearKeys(SharedPreferences.Editor editor) {
         if (editor == null) return;
         editor.remove(KEY_ENABLED)
+                .remove(KEY_CLOSE_ENABLED)
                 .remove(KEY_SPEED)
                 .remove(KEY_EASING)
                 .remove(KEY_CARD_MORPH)

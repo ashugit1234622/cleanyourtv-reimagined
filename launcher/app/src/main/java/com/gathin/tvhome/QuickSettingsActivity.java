@@ -310,6 +310,7 @@ public final class QuickSettingsActivity extends Activity {
         row.setOnClickListener(v -> {
             Intent launchIntent = new Intent(target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             if (!animateOpen) {
+                MainActivity.clearExternalCloseTarget();
                 try {
                     startActivity(launchIntent);
                 } catch (ActivityNotFoundException | SecurityException e) {
@@ -320,6 +321,9 @@ public final class QuickSettingsActivity extends Activity {
             }
             boolean handoffToLauncher = launchIntent.getBooleanExtra(
                     LauncherMotion.EXTRA_SKIP_LAUNCH_CURTAIN, false);
+            if (handoffToLauncher) {
+                MainActivity.clearExternalCloseTarget();
+            }
             AppAdapter.LaunchCommit commit = curtainApplied -> {
                 if (curtainApplied && depthDelegate != null) {
                     depthDelegate.commitHide();
@@ -331,6 +335,9 @@ public final class QuickSettingsActivity extends Activity {
                 }
                 backedByHomeCurtain = backed;
                 try {
+                    if (!handoffToLauncher) {
+                        MainActivity.recordExternalCloseTarget(launchIntent, R.id.btnSettings);
+                    }
                     startActivity(launchIntent);
                     launchingTarget = curtainApplied;
                     if (handoffToLauncher) {
@@ -346,6 +353,7 @@ public final class QuickSettingsActivity extends Activity {
                     }
                     return true;
                 } catch (ActivityNotFoundException | SecurityException e) {
+                    MainActivity.clearExternalCloseTarget();
                     if (backed) {
                         MainActivity.releasePausedOverlayCurtain();
                     }

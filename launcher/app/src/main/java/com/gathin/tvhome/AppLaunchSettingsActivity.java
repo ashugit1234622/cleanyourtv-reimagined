@@ -40,6 +40,7 @@ public final class AppLaunchSettingsActivity extends Activity {
 
     private ScrollView scroll;
     private TextView enabledChoice;
+    private TextView closeEnabledChoice;
     private TextView noteView;
     private TextView speedChoice;
     private TextView easingChoice;
@@ -92,6 +93,7 @@ public final class AppLaunchSettingsActivity extends Activity {
         }
 
         enabledChoice = findViewById(R.id.launchAnimEnabledChoice);
+        closeEnabledChoice = findViewById(R.id.launchCloseEnabledChoice);
         noteView = findViewById(R.id.launchAnimNote);
         speedChoice = findViewById(R.id.launchSpeedChoice);
         easingChoice = findViewById(R.id.launchEasingChoice);
@@ -120,6 +122,7 @@ public final class AppLaunchSettingsActivity extends Activity {
         });
 
         setupBooleanRow(enabledChoice, AppLaunchSettings.KEY_ENABLED, true);
+        setupBooleanRow(closeEnabledChoice, AppLaunchSettings.KEY_CLOSE_ENABLED, true);
         setupStepperRow(speedChoice, AppLaunchSettings.KEY_SPEED, AppLaunchSettings.SPEEDS, AppLaunchSettings.SPEED_NORMAL);
         setupStepperRow(easingChoice, AppLaunchSettings.KEY_EASING, AppLaunchSettings.EASINGS, AppLaunchSettings.EASING_IOS_IN_OUT);
         setupBooleanRow(cardMorphChoice, AppLaunchSettings.KEY_CARD_MORPH, true);
@@ -236,6 +239,8 @@ public final class AppLaunchSettingsActivity extends Activity {
 
         enabledChoice.setText(getString(R.string.launch_anim_enabled_state,
                 getString(s.enabled ? R.string.on : R.string.off)));
+        closeEnabledChoice.setText(getString(R.string.launch_anim_close_enabled_state,
+                getString(s.closeEnabled ? R.string.on : R.string.off)));
 
         if (!animations) {
             noteView.setText(R.string.launch_anim_global_off_note);
@@ -256,14 +261,16 @@ public final class AppLaunchSettingsActivity extends Activity {
                 getString(s.roundedCorners ? R.string.launch_anim_corners_rounded : R.string.launch_anim_corners_square)));
         revealChoice.setText(getString(R.string.launch_anim_reveal_state, revealLabel(s.appReveal)));
 
-        boolean active = s.enabled && animations && !reducedMotion;
-        setRowActive(speedChoice, active);
-        setRowActive(easingChoice, active);
-        setRowActive(cardMorphChoice, active);
-        setRowActive(bgDepthChoice, active);
-        setRowActive(cornersChoice, active);
-        setRowActive(revealChoice, active);
-        setRowActive(previewChoice, active);
+        boolean globalOk = animations && !reducedMotion;
+        boolean openActive = s.enabled && globalOk;
+        boolean sharedActive = (s.enabled || s.closeEnabled) && globalOk;
+        setRowActive(speedChoice, sharedActive);
+        setRowActive(easingChoice, sharedActive);
+        setRowActive(cardMorphChoice, sharedActive);
+        setRowActive(bgDepthChoice, sharedActive);
+        setRowActive(cornersChoice, sharedActive);
+        setRowActive(revealChoice, openActive);
+        setRowActive(previewChoice, openActive);
     }
 
     private static void setRowActive(TextView row, boolean active) {

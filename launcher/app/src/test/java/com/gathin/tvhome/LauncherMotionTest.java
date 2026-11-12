@@ -171,5 +171,47 @@ public class LauncherMotionTest {
                 LaunchCurtainController.translucentOverlayFinishDelayMs(slow, true));
         assertTrue(LaunchCurtainController.translucentOverlayFinishDelayMs(slow, false) >= 2000L);
     }
+
+    @Test
+    public void closeCurtainGateRespectsTargetWakeInternalAndToggle() {
+        assertTrue(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                false, true, true, true, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, false, true, true, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, false, true, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, false, false, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, true, false, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, true, false, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, false, true, false, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, false, false, true, false, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, false, false, false, true, false));
+        assertFalse(LauncherMotion.shouldPlayCloseCurtain(
+                true, true, true, true, false, false, false, false, false, true));
+    }
+
+    @Test
+    public void closeFallbackAndDreamPackageDetectionAreSafe() {
+        float[] bounds = LauncherMotion.computeCloseFallbackBounds(1920, 1080);
+        assertEquals(960f, bounds[0], 0.01f);
+        assertTrue(bounds[1] > 540f && bounds[1] < 1080f);
+        assertTrue(bounds[2] > 90f && bounds[3] > 50f);
+        assertEquals(null, LauncherMotion.computeCloseFallbackBounds(0, 1080));
+
+        assertTrue(LauncherMotion.isDreamWindowPackage("com.neilturner.aerialviews"));
+        assertTrue(LauncherMotion.isDreamWindowPackage("com.android.dreams.basic"));
+        assertFalse(LauncherMotion.isDreamWindowPackage("com.gathin.tizentube"));
+        assertFalse(LauncherMotion.isDreamWindowPackage(null));
+        assertEquals(0L, LauncherMotion.closeScheduleSettleDelayMs(true));
+        assertTrue(LauncherMotion.closeScheduleSettleDelayMs(false) > 0L);
+    }
 }
 

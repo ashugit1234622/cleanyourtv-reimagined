@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Outline;
 import android.os.Handler;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewOutlineProvider;
@@ -25,6 +26,7 @@ import android.widget.ImageView;
  */
 final class LaunchCurtainController {
 
+    private static final String TAG = "LaunchCurtain";
     private static final long DEAD_LAUNCH_TIMEOUT_MS = 6000L;
     private static final long RESUME_FADE_MS = 140L;
     private static final long TRANSLUCENT_FADE_MS = 180L;
@@ -156,6 +158,8 @@ final class LaunchCurtainController {
     private boolean committed;
     private boolean lostFocus;
     private boolean skipNextResumeCleanup;
+    private boolean closing;
+    private boolean closingWaitingStart;
     private int gen;
     private AppLaunchSettings lastSettings = AppLaunchSettings.defaults();
 
@@ -207,6 +211,14 @@ final class LaunchCurtainController {
         return pending || committed;
     }
 
+    boolean isClosing() {
+        return closing;
+    }
+
+    boolean isClosingWaitingStart() {
+        return closing && closingWaitingStart;
+    }
+
     AppLaunchSettings lastSettings() {
         return lastSettings;
     }
@@ -233,6 +245,9 @@ final class LaunchCurtainController {
         if (sourceView != null && !sourceView.isAttachedToWindow()) {
             commit.run(false);
             return;
+        }
+        if (closing) {
+            clearImmediate();
         }
         if (pending || committed) return;
 
@@ -523,11 +538,14 @@ final class LaunchCurtainController {
     }
 
     void clearImmediate() {
+        boolean wasClosing = closing;
         gen++;
         pending = false;
         committed = false;
         lostFocus = false;
         skipNextResumeCleanup = false;
+        closing = false;
+        closingWaitingStart = false;
         handler.removeCallbacks(clearLaunchPulse);
         handler.removeCallbacks(translucentFinishFallback);
         cancelAnimator();
@@ -543,6 +561,185 @@ final class LaunchCurtainController {
             cornerPx = 0f;
             curtain.invalidateOutline();
             curtain.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
+        if (wasClosing) {
+            host.onRestoreBackground();
+        }
+    }
+
+    /**
+     * Immediately covers Home with a fullscreen opaque black curtain and recessed background depth
+     * before the first resumed frame renders, masking closed apps until {@link #playCloseCurtain} runs.
+     */
+    void holdForCloseReturn(AppLaunchSettings launchCfg) {
+        if (curtain == null || root == null) return;
+        if (pending || committed || closing) {
+            clearImmediate();
+        }
+        AppLaunchSettings cfg = launchCfg != null ? launchCfg : AppLaunchSettings.defaults();
+        lastSettings = cfg;
+        closing = true;
+        closingWaitingStart = true;
+
+        int rootW = root.getWidth();
+        int rootH = root.getHeight();
+        host.onBeforeCurtainExpand(null, rootW, rootH, cfg);
+
+        if (rootW > 0 && rootH > 0) {
+            curtain.setPivotX(rootW * 0.5f);
+            curtain.setPivotY(rootH * 0.5f);
+        }
+        curtain.animate().setListener(null).cancel();
+        curtain.setTranslationX(0f);
+        curtain.setTranslationY(0f);
+        curtain.setScaleX(1f);
+        curtain.setScaleY(1f);
+        curtain.setAlpha(1f);
+        cornerPx = 0f;
+        curtain.invalidateOutline();
+        curtain.setVisibility(View.VISIBLE);
+        curtain.bringToFront();
+
+        disposeArt();
+        host.onCurtainDepthProgress(1f, cfg);
+    }
+
+    void restoreDepthForCloseMeasurement(AppLaunchSettings launchCfg) {
+        if (!closing) return;
+        AppLaunchSettings cfg = launchCfg != null ? launchCfg : lastSettings;
+        host.onCurtainDepthProgress(0f, cfg != null ? cfg : AppLaunchSettings.defaults());
+    }
+
+    /**
+     * Reverses the iOS open-curtain sweep from fullscreen ({@code u = 1}) down to {@code targetView}
+     * (or {@code relFallbackBounds}) while restoring Home background depth to {@code 1.0x}.
+     */
+    void playCloseCurtain(View targetView, float[] relFallbackBounds,
+                          AppLaunchSettings launchCfg, Runnable onFinished) {
+        if (!closing || curtain == null || root == null) {
+            finishCloseCleanup(onFinished);
+            return;
+        }
+        int rootW = root.getWidth();
+        int rootH = root.getHeight();
+        if (rootW <= 0 || rootH <= 0) {
+            finishCloseCleanup(onFinished);
+            return;
+        }
+
+        AppLaunchSettings cfg = launchCfg != null ? launchCfg : AppLaunchSettings.defaults();
+        lastSettings = cfg;
+        closingWaitingStart = false;
+
+        // holdForCloseReturn() recessed homeContent to 1.0f depth; measure target bounds at 1.0x
+        // while the fullscreen black curtain still covers Home, before applying frame u=1f below.
+        host.onCurtainDepthProgress(0f, cfg);
+
+        boolean validTargetView = false;
+        float[] targetBounds = null;
+        if (targetView != null && targetView.isAttachedToWindow()
+                && targetView.getWidth() > 0 && targetView.getHeight() > 0) {
+            float[] screen = LauncherMotion.captureScreenBounds(targetView);
+            float[] local = LauncherMotion.screenToLocalBounds(screen, root);
+            if (local != null
+                    && local[0] >= -local[2] * 0.5f && local[0] <= rootW + local[2] * 0.5f
+                    && local[1] >= -local[3] * 0.5f && local[1] <= rootH + local[3] * 0.5f) {
+                targetBounds = local;
+                validTargetView = true;
+            }
+        }
+        if (targetBounds == null && relFallbackBounds != null && relFallbackBounds.length >= 4
+                && relFallbackBounds[2] > 0f && relFallbackBounds[3] > 0f) {
+            targetBounds = relFallbackBounds;
+        }
+        if (targetBounds == null) {
+            targetBounds = LauncherMotion.computeCloseFallbackBounds(rootW, rootH);
+        }
+        if (targetBounds == null) {
+            finishCloseCleanup(onFinished);
+            return;
+        }
+
+        final LauncherMotion.LaunchCurtainPose pose = LauncherMotion.computeCurtainPose(
+                rootW, rootH, targetBounds[0], targetBounds[1], targetBounds[2], targetBounds[3]);
+        final float startCornerPx = cfg.roundedCorners
+                ? LauncherMotion.curtainCornerRadiusPx(rootH) : 0f;
+
+        cancelAnimator();
+        final Bitmap cardBmp = (validTargetView && cfg.cardMorph && host.shouldCaptureArtBitmap(targetView))
+                ? captureCardBitmap(targetView) : null;
+        replaceBitmap(cardBmp);
+        final boolean hasArt = cardBmp != null && curtainArt != null;
+        Log.d(TAG, "playCloseCurtain start gen=" + (gen + 1) + " validTarget=" + validTargetView
+                + " bounds=[" + targetBounds[0] + "," + targetBounds[1] + "," + targetBounds[2] + "," + targetBounds[3] + "]"
+                + " hasArt=" + hasArt + " durMs=" + cfg.sweepDurationMs());
+
+        final int animGen = ++gen;
+        curtain.setPivotX(rootW * 0.5f);
+        curtain.setPivotY(rootH * 0.5f);
+        curtain.setAlpha(1f);
+        curtain.setVisibility(View.VISIBLE);
+        curtain.bringToFront();
+
+        if (hasArt) {
+            curtainArt.setImageBitmap(cardBmp);
+            curtainArt.setPivotX(rootW * 0.5f);
+            curtainArt.setPivotY(rootH * 0.5f);
+            curtainArt.setScaleX(1f);
+            curtainArt.setScaleY(1f);
+            curtainArt.setAlpha(0f);
+            curtainArt.setVisibility(View.INVISIBLE);
+        } else {
+            disposeArt();
+        }
+        applyFrame(1f, pose, startCornerPx, hasArt, cfg);
+
+        ValueAnimator valueAnimator = ValueAnimator.ofFloat(0f, 1f);
+        valueAnimator.setDuration(cfg.sweepDurationMs());
+        valueAnimator.setInterpolator(cfg.createInterpolator());
+        valueAnimator.addUpdateListener(anim -> {
+            if (gen != animGen || !closing) return;
+            float t = (float) anim.getAnimatedValue();
+            float u = Math.max(0f, Math.min(1f, 1f - t));
+            applyFrame(u, pose, startCornerPx, hasArt, cfg);
+        });
+        valueAnimator.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (animator == valueAnimator) animator = null;
+                if (cancelled || gen != animGen || !closing) return;
+                applyFrame(0f, pose, startCornerPx, hasArt, cfg);
+                if (hasArt && curtain != null) {
+                    curtain.animate()
+                            .alpha(0f)
+                            .setDuration(45L)
+                            .setInterpolator(new DecelerateInterpolator(1.3f))
+                            .withEndAction(() -> {
+                                if (gen == animGen && closing) {
+                                    finishCloseCleanup(onFinished);
+                                }
+                            })
+                            .start();
+                } else {
+                    finishCloseCleanup(onFinished);
+                }
+            }
+        });
+        animator = valueAnimator;
+        valueAnimator.start();
+    }
+
+    private void finishCloseCleanup(Runnable onFinished) {
+        clearImmediate();
+        if (onFinished != null) {
+            onFinished.run();
         }
     }
 
@@ -590,6 +787,9 @@ final class LaunchCurtainController {
         if (hasArt && curtainArt != null) {
             float artAlpha = LauncherMotion.curtainArtAlphaAt(u);
             if (artAlpha > 0.001f) {
+                if (curtainArt.getVisibility() != View.VISIBLE) {
+                    curtainArt.setVisibility(View.VISIBLE);
+                }
                 curtainArt.setAlpha(artAlpha);
                 float artScale = 1f + 0.10f * u;
                 curtainArt.setScaleX(artScale);

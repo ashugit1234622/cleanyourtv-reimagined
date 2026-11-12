@@ -1,11 +1,17 @@
 package com.gathin.tvhome;
 
 import android.app.Activity;
+import android.app.Application;
+import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
 import android.view.animation.PathInterpolator;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Shared pure motion math and lightweight ViewPropertyAnimator helpers for Home transitions,
@@ -21,6 +27,10 @@ public final class LauncherMotion {
     public static final long CURTAIN_SWEEP_MS = 410L;
     /** Marks an internal handoff whose curtain sweep already expanded in the previous overlay. */
     public static final String EXTRA_SKIP_LAUNCH_CURTAIN = "com.gathin.tvhome.extra.SKIP_LAUNCH_CURTAIN";
+    /** Extra sent by HomeKeyService when short-pressing Home while an external app is foregrounded. */
+    public static final String EXTRA_HOME_CLOSE_RETURN = "com.gathin.tvhome.extra.HOME_CLOSE_RETURN";
+    /** Foreground package captured right before HomeKeyService navigated Home. */
+    public static final String EXTRA_CLOSE_RETURN_PACKAGE = "com.gathin.tvhome.extra.CLOSE_RETURN_PACKAGE";
     private static final float CURTAIN_CORNER_HEIGHT_FRACTION = 0.155f;
 
     private LauncherMotion() {
@@ -208,6 +218,137 @@ public final class LauncherMotion {
                 Math.max(1f, rootW * 0.14f),
                 Math.max(1f, rootH * 0.12f)
         };
+    }
+
+    /**
+     * Compact dock-band fallback target {@code {cx, cy, width, height}} used when a closed app
+     * has no matching visible tile or anchor pill on Home (e.g. unpinned app from Recents).
+     */
+    public static float[] computeCloseFallbackBounds(int rootW, int rootH) {
+        if (rootW <= 0 || rootH <= 0) return null;
+        return new float[] {
+                rootW * 0.5f,
+                rootH * 0.74f,
+                Math.max(96f, rootW * 0.115f),
+                Math.max(54f, rootH * 0.115f)
+        };
+    }
+
+    /**
+     * Evaluates whether a closing app animation can play on return to Home, excluding translucent
+     * resumes, wakes/screensavers, internal launcher screens (e.g. Settings/Clock), and paused prefs.
+     */
+    public static boolean shouldPlayCloseCurtain(boolean stoppedBeforeResume,
+                                                 boolean hasCloseTarget,
+                                                 boolean closeAnimEnabled,
+                                                 boolean animations,
+                                                 boolean reducedMotion,
+                                                 boolean suppressWakeOrDream,
+                                                 boolean introPlaying,
+                                                 boolean popupOpen,
+                                                 boolean showcaseEngaged,
+                                                 boolean internalReturn) {
+        return stoppedBeforeResume
+                && hasCloseTarget
+                && closeAnimEnabled
+                && animations
+                && !reducedMotion
+                && !suppressWakeOrDream
+                && !introPlaying
+                && !popupOpen
+                && !showcaseEngaged
+                && !internalReturn;
+    }
+
+    /**
+     * Additional wait (ms) before starting the close-curtain shrink after {@code MainActivity}
+     * draws Frame 1 while the fullscreen black close hold is active. Home-key returns are already
+     * masked by {@link HomeKeyService}'s cover ({@code 0 ms}), whereas Back-returns allow the
+     * exiting external app's WM fade transition (~240 ms) to clear into black before the shrink
+     * curve accelerates.
+     */
+    public static long closeScheduleSettleDelayMs(boolean homeCloseReturn) {
+        return homeCloseReturn ? 0L : 240L;
+    }
+
+    /** Identifies screensaver/dream window packages where Home returns must never play close shrink. */
+    public static boolean isDreamWindowPackage(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return false;
+        String lower = pkg.toLowerCase(java.util.Locale.ROOT);
+        return lower.equals("com.neilturner.aerialviews")
+                || lower.startsWith("com.android.dreams")
+                || lower.contains("screensaver");
+    }
+
+    private static final AtomicBoolean internalTrackerInstalled = new AtomicBoolean(false);
+    private static final Set<String> activeInternalUis = Collections.synchronizedSet(new HashSet<>());
+    private static volatile boolean internalOpaqueReturnPending = false;
+
+    static void ensureInternalUiTracker(Application app) {
+        if (app == null || !internalTrackerInstalled.compareAndSet(false, true)) return;
+        app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
+
+            @Override
+            public void onActivityStarted(Activity activity) {}
+
+            @Override
+            public void onActivityResumed(Activity activity) {
+                if (isOverlayOrSubScreenActivity(activity)) {
+                    activeInternalUis.add(activity.getClass().getName());
+                }
+            }
+
+            @Override
+            public void onActivityPaused(Activity activity) {
+                activeInternalUis.remove(activity.getClass().getName());
+                if (isOpaqueSubScreenActivity(activity)) {
+                    internalOpaqueReturnPending = true;
+                }
+            }
+
+            @Override
+            public void onActivityStopped(Activity activity) {
+                activeInternalUis.remove(activity.getClass().getName());
+            }
+
+            @Override
+            public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
+
+            @Override
+            public void onActivityDestroyed(Activity activity) {
+                activeInternalUis.remove(activity.getClass().getName());
+            }
+        });
+    }
+
+    private static boolean isOpaqueSubScreenActivity(Activity activity) {
+        return activity instanceof LauncherSettingsActivity
+                || activity instanceof HomeSettingsActivity
+                || activity instanceof AppLaunchSettingsActivity
+                || activity instanceof IntroSettingsActivity
+                || activity instanceof ClockActivity;
+    }
+
+    private static boolean isOverlayOrSubScreenActivity(Activity activity) {
+        return isOpaqueSubScreenActivity(activity)
+                || activity instanceof QuickSettingsActivity
+                || activity instanceof RecentsActivity;
+    }
+
+    static boolean hasActiveInternalUi() {
+        return !activeInternalUis.isEmpty();
+    }
+
+    static void clearInternalOpaqueReturn() {
+        internalOpaqueReturnPending = false;
+    }
+
+    static boolean consumeInternalOpaqueReturn() {
+        boolean v = internalOpaqueReturnPending;
+        internalOpaqueReturnPending = false;
+        return v;
     }
 
     /** Applies the seamless black-to-app reveal transition after the local curtain fills the screen. */

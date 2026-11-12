@@ -502,6 +502,7 @@ public class RecentsActivity extends Activity {
             }
             backedByHomeCurtain = backed;
             try {
+                MainActivity.recordExternalCloseTarget(launchIntent, View.NO_ID);
                 startActivity(launchIntent);
                 launchingTarget = curtainApplied;
                 if (curtainApplied) {
@@ -513,6 +514,7 @@ public class RecentsActivity extends Activity {
                 }
                 return true;
             } catch (ActivityNotFoundException | SecurityException e) {
+                MainActivity.clearExternalCloseTarget();
                 if (backed) {
                     MainActivity.releasePausedOverlayCurtain();
                 }

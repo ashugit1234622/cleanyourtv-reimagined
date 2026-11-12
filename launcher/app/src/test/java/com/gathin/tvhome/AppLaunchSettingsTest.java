@@ -13,6 +13,7 @@ public class AppLaunchSettingsTest {
     public void defaultsMatchOriginalIosOpenBehavior() {
         AppLaunchSettings d = AppLaunchSettings.defaults();
         assertTrue(d.enabled);
+        assertTrue(d.closeEnabled);
         assertEquals(AppLaunchSettings.SPEED_NORMAL, d.speed);
         assertEquals(AppLaunchSettings.EASING_IOS_IN_OUT, d.easing);
         assertTrue(d.cardMorph);
@@ -27,8 +28,9 @@ public class AppLaunchSettingsTest {
     @Test
     public void fromValuesNormalizesMixedCaseAndFallsBackOnUnknown() {
         AppLaunchSettings clean = AppLaunchSettings.fromValues(
-                false, "  FAST ", "Strong_In", false, " DEEP ", false, " Fade ");
+                false, false, "  FAST ", "Strong_In", false, " DEEP ", false, " Fade ");
         assertFalse(clean.enabled);
+        assertFalse(clean.closeEnabled);
         assertEquals(AppLaunchSettings.SPEED_FAST, clean.speed);
         assertEquals(AppLaunchSettings.EASING_STRONG_IN, clean.easing);
         assertFalse(clean.cardMorph);
@@ -139,6 +141,21 @@ public class AppLaunchSettingsTest {
                 true, AppLaunchSettings.SPEED_NORMAL, easing,
                 true, AppLaunchSettings.DEPTH_MEDIUM, true, AppLaunchSettings.REVEAL_ZOOM_FADE);
         assertArrayEquals(expected, s.curveControlPoints(), 0.0001f);
+    }
+
+    @Test
+    public void closeEnabledCanToggleIndependentlyOfOpenEnabled() {
+        AppLaunchSettings closeOnly = AppLaunchSettings.fromValues(
+                false, true, AppLaunchSettings.SPEED_FAST, AppLaunchSettings.EASING_IOS_IN_OUT,
+                true, AppLaunchSettings.DEPTH_MEDIUM, true, AppLaunchSettings.REVEAL_ZOOM_FADE);
+        assertFalse(closeOnly.enabled);
+        assertTrue(closeOnly.closeEnabled);
+
+        AppLaunchSettings openOnly = AppLaunchSettings.fromValues(
+                true, false, AppLaunchSettings.SPEED_FAST, AppLaunchSettings.EASING_IOS_IN_OUT,
+                true, AppLaunchSettings.DEPTH_MEDIUM, true, AppLaunchSettings.REVEAL_ZOOM_FADE);
+        assertTrue(openOnly.enabled);
+        assertFalse(openOnly.closeEnabled);
     }
 }
 

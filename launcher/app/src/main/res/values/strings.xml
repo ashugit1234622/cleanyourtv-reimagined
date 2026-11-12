@@ -225,6 +225,8 @@
     <string name="launch_anim_summary_reduced">Paused (Reduced motion)</string>
     <string name="launch_anim_enabled_state">App opening animation: %1$s</string>
     <string name="launch_anim_enabled_help">Expands clicked tiles, pills, menus, and settings smoothly to fullscreen before opening</string>
+    <string name="launch_anim_close_enabled_state">App closing animation: %1$s</string>
+    <string name="launch_anim_close_enabled_help">Shrinks closed apps smoothly back into their dock tile or button</string>
     <string name="launch_anim_global_off_note">Global Animations are turned off in Launcher settings (launch animation paused)</string>
     <string name="launch_anim_reduced_note">Reduced motion is active (launch animation paused)</string>
     <string name="launch_anim_speed_state">Speed: %1$s</string>

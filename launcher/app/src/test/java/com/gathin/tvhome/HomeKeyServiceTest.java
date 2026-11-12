@@ -57,4 +57,18 @@ public class HomeKeyServiceTest {
         assertTrue(HomeKeyService.stillArmed(SOON, SOON + HomeKeyService.SCREEN_ON_WINDOW_MS));
         assertFalse(HomeKeyService.stillArmed(SOON, 0));
     }
+
+    @Test public void homeCloseCoverGuardsHomeInternalUiStandbyAndDream() {
+        assertTrue(HomeKeyService.shouldUseHomeCloseCover(true, false, true, false, false, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(false, false, true, false, false, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, true, true, false, false, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, false, false, false, false, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, false, true, true, false, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, false, true, false, true, true, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, false, true, false, false, false, false));
+        assertFalse(HomeKeyService.shouldUseHomeCloseCover(true, false, true, false, false, true, true));
+        assertTrue(HomeKeyService.CLOSE_COVER_TIMEOUT_MS >= 1000L);
+        assertTrue(HomeKeyService.CLOSE_COVER_WM_SETTLE_MS > 0L
+                && HomeKeyService.CLOSE_COVER_WM_SETTLE_MS < HomeKeyService.CLOSE_COVER_TIMEOUT_MS);
+    }
 }

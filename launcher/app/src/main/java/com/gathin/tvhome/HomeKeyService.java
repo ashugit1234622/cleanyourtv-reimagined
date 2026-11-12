@@ -2,6 +2,7 @@ package com.gathin.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -17,10 +18,14 @@ import android.os.SystemClock;
 import android.os.UserManager;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.PixelFormat;
 import android.provider.Settings;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Toast;
 
 import java.util.Collections;
@@ -85,6 +90,14 @@ public class HomeKeyService extends AccessibilityService {
     private Map<Integer, String> frontAppKeys = Collections.emptyMap();
     private Map<Integer, String> frontAppScancodes = Collections.emptyMap();
     private String frontPackage = "";
+    private boolean frontDreamActive;
+    private View closeCoverView;
+    private boolean closeCoverFadeDone;
+    private boolean closeCoverHomeReady;
+    private boolean closeCoverSettleScheduled;
+    private Runnable closeCoverPendingRun;
+    private final Runnable closeCoverTimeout = this::dismissCloseCoverOnTimeout;
+    private final Runnable closeCoverSettle = this::finishCloseCoverHandoff;
     /** power_on_home_always: Home at every power-on, not only over Live TV. */
     private boolean powerOnAlways;
     /** power_on_home: re-arms after the screen turns on; null unless the key is on. */
@@ -102,6 +115,7 @@ public class HomeKeyService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         running = this;
+        LauncherMotion.ensureInternalUiTracker(getApplication());
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
@@ -143,6 +157,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public void onDestroy() {
         if (running == this) running = null;
+        removeCloseCoverImmediate();
         cancelHomeHold();
         RemoteKeys.release(this);
         stopWaitingForUnlock();
@@ -227,9 +242,11 @@ public class HomeKeyService extends AccessibilityService {
             screenOnReceiver = null;
             powerOnUntil = 0;
         }
-        // home_key_service.xml subscribes to no events, so the redirects ask for window changes only when one is on.
+        // home_key_service.xml subscribes to no events, so the redirects ask for window changes only when needed.
         AccessibilityServiceInfo info = getServiceInfo();
-        if (info != null && (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty() || watchFront)) {
+        boolean trackFrontWindow = !stockHome.isEmpty() || !powerOnLiveTv.isEmpty() || watchFront
+                || homeLongPressHome || AppLaunchSettings.load(this).closeEnabled;
+        if (info != null && trackFrontWindow) {
             info.eventTypes |= AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
             setServiceInfo(info);
         }
@@ -299,7 +316,7 @@ public class HomeKeyService extends AccessibilityService {
                 return true;
             }
             cancelHomeHold();
-            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) openHome();
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) openHomeForKey();
             return true;
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_HOME && !stockHome.isEmpty()) {
@@ -307,7 +324,7 @@ public class HomeKeyService extends AccessibilityService {
             return false;
         }
         if (event.getKeyCode() != KeyEvent.KEYCODE_ALL_APPS) return false;
-        if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) openHome();
+        if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) openHomeForKey();
         return true;
     }
 
@@ -315,6 +332,7 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         cancelHomeHold();
+        removeCloseCoverImmediate();
         RemoteKeys.release(this);
         // Do NOT drop repair record on unbind - standby and reboot trigger unbind.
         return super.onUnbind(intent);
@@ -323,15 +341,20 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        // app_keys "front:" entries: only activities count, so a toast or the volume bar doesn't change the app in front.
-        if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty())
-                && event.getPackageName() != null && event.getClassName() != null) {
-            try {
-                ComponentName window = new ComponentName(event.getPackageName().toString(), event.getClassName().toString());
-                getPackageManager().getActivityInfo(window, 0);
-                frontPackage = window.getPackageName();
-            } catch (PackageManager.NameNotFoundException notAnActivity) {
-                // a dialog, panel or overlay: the app under it is still in front
+        if (event.getPackageName() != null && event.getClassName() != null) {
+            String rawPkg = event.getPackageName().toString();
+            String rawCls = event.getClassName().toString();
+            if (rawCls.endsWith(".DreamActivity") || LauncherMotion.isDreamWindowPackage(rawPkg)) {
+                frontDreamActive = true;
+            } else {
+                try {
+                    ComponentName window = new ComponentName(rawPkg, rawCls);
+                    getPackageManager().getActivityInfo(window, 0);
+                    frontPackage = window.getPackageName();
+                    frontDreamActive = false;
+                } catch (PackageManager.NameNotFoundException notAnActivity) {
+                    // a dialog, panel or overlay: the app under it is still in front
+                }
             }
         }
         // power_on_home: the firmware opened Live TV by itself at power-on, before anyone pressed a key.
@@ -436,7 +459,7 @@ public class HomeKeyService extends AccessibilityService {
     private void redirectHomeKey(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()
                 && isShortPress(event.getDownTime(), event.getEventTime(), ViewConfiguration.getLongPressTimeout())) {
-            handler.postDelayed(this::openHome, HOME_KEY_DELAY_MS);
+            handler.postDelayed(this::openHomeForKey, HOME_KEY_DELAY_MS);
         }
     }
 
@@ -456,7 +479,7 @@ public class HomeKeyService extends AccessibilityService {
             boolean fired = homeHoldFired;
             cancelHomeHold();
             if (!fired && !event.isCanceled()) {
-                openHome();
+                openHomeForKey();
             }
         } else if (action != KeyEvent.ACTION_MULTIPLE) {
             cancelHomeHold();
@@ -486,11 +509,184 @@ public class HomeKeyService extends AccessibilityService {
         }
     }
 
+    private void openHomeForKey() {
+        PowerManager pm = getSystemService(PowerManager.class);
+        boolean interactive = pm == null || pm.isInteractive();
+        Config cfg = Config.load(this);
+        AppLaunchSettings launchCfg = AppLaunchSettings.load(this);
+        boolean homeResumed = MainActivity.isHomeResumedForOverlay();
+        boolean internalUi = LauncherMotion.hasActiveInternalUi();
+        boolean dreamActive = frontDreamActive || LauncherMotion.isDreamWindowPackage(frontPackage);
+        boolean useCover = shouldUseHomeCloseCover(
+                cfg.animations,
+                cfg.reducedMotion,
+                launchCfg.closeEnabled,
+                homeResumed,
+                internalUi,
+                interactive,
+                dreamActive);
+        android.util.Log.d("LaunchCurtain", "openHomeForKey useCover=" + useCover
+                + " frontPkg=" + frontPackage + " dream=" + dreamActive
+                + " homeResumed=" + homeResumed + " internalUi=" + internalUi
+                + " closeEnabled=" + launchCfg.closeEnabled);
+        if (useCover) {
+            startHomeCloseCover();
+            openHomeWithExtras(true, frontPackage);
+        } else {
+            openHome();
+        }
+    }
+
+    static final long CLOSE_COVER_TIMEOUT_MS = 1500L;
+    static final long CLOSE_COVER_WM_SETTLE_MS = 260L;
+
+    static boolean shouldUseHomeCloseCover(boolean animations,
+                                           boolean reducedMotion,
+                                           boolean closeAnimEnabled,
+                                           boolean homeResumed,
+                                           boolean internalUiActive,
+                                           boolean interactive,
+                                           boolean dreamActive) {
+        return animations
+                && !reducedMotion
+                && closeAnimEnabled
+                && !homeResumed
+                && !internalUiActive
+                && interactive
+                && !dreamActive;
+    }
+
+    private void startHomeCloseCover() {
+        removeCloseCoverImmediate();
+        WindowManager wm = getSystemService(WindowManager.class);
+        if (wm == null) return;
+        View cover = new View(this);
+        cover.setBackgroundColor(0xFF000000);
+        cover.setAlpha(0f);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        try {
+            wm.addView(cover, lp);
+        } catch (RuntimeException ignored) {
+            return;
+        }
+        closeCoverView = cover;
+        closeCoverFadeDone = false;
+        closeCoverHomeReady = false;
+        closeCoverPendingRun = null;
+        handler.removeCallbacks(closeCoverTimeout);
+        handler.postDelayed(closeCoverTimeout, CLOSE_COVER_TIMEOUT_MS);
+        cover.animate()
+                .alpha(1f)
+                .setDuration(65L)
+                .setInterpolator(new DecelerateInterpolator(1.3f))
+                .withEndAction(() -> {
+                    if (closeCoverView == cover) {
+                        closeCoverFadeDone = true;
+                        tryCompleteCloseCoverHandoff();
+                    }
+                })
+                .start();
+    }
+
+    static void notifyHomeCurtainReadyAndRun(Runnable onReady) {
+        HomeKeyService inst = running;
+        if (inst == null || inst.closeCoverView == null) {
+            if (onReady != null) onReady.run();
+            return;
+        }
+        inst.closeCoverHomeReady = true;
+        inst.closeCoverPendingRun = onReady;
+        inst.tryCompleteCloseCoverHandoff();
+    }
+
+    private void tryCompleteCloseCoverHandoff() {
+        if (!closeCoverFadeDone || !closeCoverHomeReady || closeCoverSettleScheduled) return;
+        closeCoverSettleScheduled = true;
+        handler.removeCallbacks(closeCoverTimeout);
+        handler.removeCallbacks(closeCoverSettle);
+        // Hold the black accessibility cover briefly after MainActivity draws Frame 1 so Android 14
+        // WM Shell's exiting-app surface fade completes invisibly before revealing #launchCurtain.
+        handler.postDelayed(closeCoverSettle, CLOSE_COVER_WM_SETTLE_MS);
+    }
+
+    private void finishCloseCoverHandoff() {
+        closeCoverSettleScheduled = false;
+        if (closeCoverView == null || !closeCoverHomeReady) return;
+        Runnable next = closeCoverPendingRun;
+        closeCoverPendingRun = null;
+        removeCloseCoverImmediate();
+        if (next != null) {
+            next.run();
+        }
+    }
+
+    private void dismissCloseCoverOnTimeout() {
+        android.util.Log.d("LaunchCurtain", "dismissCloseCoverOnTimeout fired");
+        handler.removeCallbacks(closeCoverSettle);
+        closeCoverSettleScheduled = false;
+        closeCoverHomeReady = false;
+        closeCoverPendingRun = null;
+        View cover = closeCoverView;
+        if (cover == null) return;
+        cover.animate().setListener(null).cancel();
+        cover.animate()
+                .alpha(0f)
+                .setDuration(80L)
+                .withEndAction(this::removeCloseCoverImmediate)
+                .start();
+    }
+
+    private void removeCloseCoverImmediate() {
+        handler.removeCallbacks(closeCoverTimeout);
+        handler.removeCallbacks(closeCoverSettle);
+        closeCoverFadeDone = false;
+        closeCoverHomeReady = false;
+        closeCoverSettleScheduled = false;
+        closeCoverPendingRun = null;
+        View cover = closeCoverView;
+        closeCoverView = null;
+        if (cover == null) return;
+        cover.animate().setListener(null).cancel();
+        WindowManager wm = getSystemService(WindowManager.class);
+        if (wm != null) {
+            try {
+                wm.removeViewImmediate(cover);
+            } catch (RuntimeException ignored) {
+                try {
+                    wm.removeView(cover);
+                } catch (RuntimeException ignoredAlso) {
+                }
+            }
+        }
+    }
+
     private void openHome() {
+        openHomeWithExtras(false, null);
+    }
+
+    private void openHomeWithExtras(boolean closeReturn, String returnPackage) {
         Intent open = stockHomeStays() ? new Intent(this, MainActivity.class)
                 : new Intent(Intent.ACTION_MAIN).setPackage(getPackageName());
-        startActivity(open.addCategory(Intent.CATEGORY_HOME)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+        open.addCategory(Intent.CATEGORY_HOME)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        if (closeReturn) {
+            open.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            open.putExtra(LauncherMotion.EXTRA_HOME_CLOSE_RETURN, true);
+            if (returnPackage != null && !returnPackage.isEmpty() && !getPackageName().equals(returnPackage)) {
+                open.putExtra(LauncherMotion.EXTRA_CLOSE_RETURN_PACKAGE, returnPackage);
+            }
+            startActivity(open, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle());
+            return;
+        }
+        startActivity(open);
     }
 
     /** stock_home_redirect while Android's Home is still the stock launcher (launcherx on Google TV outranks this
