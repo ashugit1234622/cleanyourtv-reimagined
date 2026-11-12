@@ -2,17 +2,21 @@ package com.gathin.tvhome;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Outline;
+import android.os.Build;
 import android.os.Handler;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewOutlineProvider;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.LinearInterpolator;
 import android.widget.ImageView;
 
 /**
@@ -149,6 +153,9 @@ final class LaunchCurtainController {
     private final View curtain;
     private final ImageView curtainArt;
     private final Host host;
+    private final float baseElevationPx;
+    private final int baseSpotShadowColor;
+    private final int baseAmbientShadowColor;
     private boolean translucentHost;
 
     private Bitmap bitmap;
@@ -178,6 +185,14 @@ final class LaunchCurtainController {
             this.curtainArt.forceHasOverlappingRendering(false);
         }
         if (this.curtain != null) {
+            this.baseElevationPx = this.curtain.getElevation();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                this.baseSpotShadowColor = this.curtain.getOutlineSpotShadowColor();
+                this.baseAmbientShadowColor = this.curtain.getOutlineAmbientShadowColor();
+            } else {
+                this.baseSpotShadowColor = Color.BLACK;
+                this.baseAmbientShadowColor = Color.BLACK;
+            }
             this.curtain.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -192,6 +207,10 @@ final class LaunchCurtainController {
                 }
             });
             this.curtain.setClipToOutline(true);
+        } else {
+            this.baseElevationPx = 0f;
+            this.baseSpotShadowColor = Color.BLACK;
+            this.baseAmbientShadowColor = Color.BLACK;
         }
     }
 
@@ -314,6 +333,7 @@ final class LaunchCurtainController {
         host.onBeforeCurtainExpand(effectiveSource, rootW, rootH, launchCfg);
 
         curtain.animate().setListener(null).cancel();
+        applyCurtainShadowForClose(false);
         curtain.setLayerType(View.LAYER_TYPE_NONE, null);
         cornerPx = startCornerPx;
         curtain.invalidateOutline();
@@ -415,6 +435,7 @@ final class LaunchCurtainController {
         skipNextResumeCleanup = skipNextResume;
 
         curtain.animate().setListener(null).cancel();
+        applyCurtainShadowForClose(false);
         curtain.setLayerType(View.LAYER_TYPE_NONE, null);
         curtain.setTranslationX(0f);
         curtain.setTranslationY(0f);
@@ -552,6 +573,7 @@ final class LaunchCurtainController {
         disposeArt();
         if (curtain != null) {
             curtain.animate().setListener(null).cancel();
+            applyCurtainShadowForClose(false);
             curtain.setVisibility(View.INVISIBLE);
             curtain.setAlpha(0f);
             curtain.setTranslationX(0f);
@@ -590,6 +612,7 @@ final class LaunchCurtainController {
             curtain.setPivotY(rootH * 0.5f);
         }
         curtain.animate().setListener(null).cancel();
+        applyCurtainShadowForClose(true);
         curtain.setTranslationX(0f);
         curtain.setTranslationY(0f);
         curtain.setScaleX(1f);
@@ -639,8 +662,7 @@ final class LaunchCurtainController {
         float[] targetBounds = null;
         if (targetView != null && targetView.isAttachedToWindow()
                 && targetView.getWidth() > 0 && targetView.getHeight() > 0) {
-            float[] screen = LauncherMotion.captureScreenBounds(targetView);
-            float[] local = LauncherMotion.screenToLocalBounds(screen, root);
+            float[] local = LauncherMotion.measureBoundsInAncestor(targetView, root);
             if (local != null
                     && local[0] >= -local[2] * 0.5f && local[0] <= rootW + local[2] * 0.5f
                     && local[1] >= -local[3] * 0.5f && local[1] <= rootH + local[3] * 0.5f) {
@@ -675,6 +697,7 @@ final class LaunchCurtainController {
                 + " hasArt=" + hasArt + " durMs=" + cfg.sweepDurationMs());
 
         final int animGen = ++gen;
+        applyCurtainShadowForClose(true);
         curtain.setPivotX(rootW * 0.5f);
         curtain.setPivotY(rootH * 0.5f);
         curtain.setAlpha(1f);
@@ -694,14 +717,36 @@ final class LaunchCurtainController {
         }
         applyFrame(1f, pose, startCornerPx, hasArt, cfg);
 
+        final long sweepMs = Math.max(1L, cfg.sweepDurationMs());
+        final TimeInterpolator sweepEase = cfg.createInterpolator();
+        final long fadeStartMs;
+        final long fadeDurationMs;
+        final long totalMs;
+        if (hasArt) {
+            float fadeStartFrac = LauncherMotion.closeFadeStartFraction(sweepEase);
+            fadeStartMs = LauncherMotion.closeFadeStartMs(sweepMs, fadeStartFrac);
+            fadeDurationMs = LauncherMotion.closeTailDurationMs(sweepMs);
+            totalMs = LauncherMotion.closeTotalDurationMs(sweepMs, fadeStartMs, fadeDurationMs);
+        } else {
+            fadeStartMs = sweepMs;
+            fadeDurationMs = 0L;
+            totalMs = sweepMs;
+        }
+
         ValueAnimator valueAnimator = ValueAnimator.ofFloat(0f, 1f);
-        valueAnimator.setDuration(cfg.sweepDurationMs());
-        valueAnimator.setInterpolator(cfg.createInterpolator());
+        valueAnimator.setDuration(totalMs);
+        valueAnimator.setInterpolator(new LinearInterpolator());
         valueAnimator.addUpdateListener(anim -> {
             if (gen != animGen || !closing) return;
-            float t = (float) anim.getAnimatedValue();
+            float elapsedMs = (float) anim.getAnimatedValue() * totalMs;
+            float sweepFraction = Math.max(0f, Math.min(1f, elapsedMs / sweepMs));
+            float t = sweepEase.getInterpolation(sweepFraction);
             float u = Math.max(0f, Math.min(1f, 1f - t));
             applyFrame(u, pose, startCornerPx, hasArt, cfg);
+            if (hasArt && curtain != null) {
+                curtain.setAlpha(LauncherMotion.closeSettleCurtainAlphaAt(
+                        elapsedMs, fadeStartMs, fadeDurationMs));
+            }
         });
         valueAnimator.addListener(new AnimatorListenerAdapter() {
             private boolean cancelled;
@@ -715,21 +760,7 @@ final class LaunchCurtainController {
             public void onAnimationEnd(Animator animation) {
                 if (animator == valueAnimator) animator = null;
                 if (cancelled || gen != animGen || !closing) return;
-                applyFrame(0f, pose, startCornerPx, hasArt, cfg);
-                if (hasArt && curtain != null) {
-                    curtain.animate()
-                            .alpha(0f)
-                            .setDuration(45L)
-                            .setInterpolator(new DecelerateInterpolator(1.3f))
-                            .withEndAction(() -> {
-                                if (gen == animGen && closing) {
-                                    finishCloseCleanup(onFinished);
-                                }
-                            })
-                            .start();
-                } else {
-                    finishCloseCleanup(onFinished);
-                }
+                finishCloseCleanup(onFinished);
             }
         });
         animator = valueAnimator;
@@ -868,6 +899,18 @@ final class LaunchCurtainController {
         animator = null;
         if (current != null) {
             current.cancel();
+        }
+    }
+
+    private void applyCurtainShadowForClose(boolean suppressShadow) {
+        if (curtain == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Preserve Z-ordering above focused tiles while removing directional point-light shadow cast.
+            curtain.setElevation(baseElevationPx);
+            curtain.setOutlineSpotShadowColor(suppressShadow ? Color.TRANSPARENT : baseSpotShadowColor);
+            curtain.setOutlineAmbientShadowColor(suppressShadow ? Color.TRANSPARENT : baseAmbientShadowColor);
+        } else {
+            curtain.setElevation(suppressShadow ? 0f : baseElevationPx);
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.gathin.tvhome;
 
+import android.animation.TimeInterpolator;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -212,6 +214,65 @@ public class LauncherMotionTest {
         assertFalse(LauncherMotion.isDreamWindowPackage(null));
         assertEquals(0L, LauncherMotion.closeScheduleSettleDelayMs(true));
         assertTrue(LauncherMotion.closeScheduleSettleDelayMs(false) > 0L);
+    }
+
+    @Test
+    public void mapBoundsStepPreservesExactSubpixelCenterAndScaledSize() {
+        float rawW = 354f;
+        float rawH = 199f;
+        float[] pts = new float[] { 0f, 0f, rawW, rawH, rawW * 0.5f, rawH * 0.5f };
+
+        // Card scale = 1.10 around its center inside item container at left = 162, top = 722.5
+        LauncherMotion.mapBoundsStep(pts, rawW * 0.5f, rawH * 0.5f,
+                1.10f, 1.10f, 0f, 0f, 162f, 722.5f, 0, 0);
+
+        float cx = pts[4];
+        float cy = pts[5];
+        float w = Math.abs(pts[2] - pts[0]);
+        float h = Math.abs(pts[3] - pts[1]);
+
+        assertEquals(339.0f, cx, 0.0001f);
+        assertEquals(822.0f, cy, 0.0001f);
+        assertEquals(389.4f, w, 0.001f);
+        assertEquals(218.9f, h, 0.001f);
+    }
+
+    @Test
+    public void closeSettleFadeTimingAndSmoothstepAreContinuous() {
+        TimeInterpolator cubicEaseOut = input -> {
+            float inv = 1f - input;
+            return 1f - inv * inv * inv;
+        };
+        TimeInterpolator linear = input -> input;
+
+        float cubicStartFrac = LauncherMotion.closeFadeStartFraction(cubicEaseOut);
+        assertTrue(cubicStartFrac >= 0.86f && cubicStartFrac < 1.0f);
+        assertTrue(1f - cubicEaseOut.getInterpolation(cubicStartFrac) <= 0.0051f);
+
+        float linearStartFrac = LauncherMotion.closeFadeStartFraction(linear);
+        assertTrue(linearStartFrac >= 0.994f && linearStartFrac <= 1.0f);
+        assertEquals(1f, LauncherMotion.closeFadeStartFraction(null), 0.0001f);
+
+        long sweepMs = 540L;
+        long fadeStartMs = LauncherMotion.closeFadeStartMs(sweepMs, cubicStartFrac);
+        long tailMs = LauncherMotion.closeTailDurationMs(sweepMs);
+        long totalMs = LauncherMotion.closeTotalDurationMs(sweepMs, fadeStartMs, tailMs);
+
+        assertTrue(fadeStartMs >= 464L && fadeStartMs <= sweepMs);
+        assertEquals(173L, tailMs);
+        assertEquals(120L, LauncherMotion.closeTailDurationMs(220L));
+        assertEquals(200L, LauncherMotion.closeTailDurationMs(900L));
+        assertEquals(fadeStartMs + tailMs, totalMs);
+        assertTrue(totalMs > sweepMs);
+
+        assertEquals(1f, LauncherMotion.closeSettleCurtainAlphaAt(0f, fadeStartMs, tailMs), 0.0001f);
+        assertEquals(1f, LauncherMotion.closeSettleCurtainAlphaAt(fadeStartMs, fadeStartMs, tailMs), 0.0001f);
+        float alphaMid = LauncherMotion.closeSettleCurtainAlphaAt(fadeStartMs + tailMs * 0.5f, fadeStartMs, tailMs);
+        float alphaThreeQuarter = LauncherMotion.closeSettleCurtainAlphaAt(fadeStartMs + tailMs * 0.75f, fadeStartMs, tailMs);
+        assertEquals(0.5f, alphaMid, 0.0001f);
+        assertTrue(alphaThreeQuarter > 0f && alphaThreeQuarter < alphaMid);
+        assertEquals(0f, LauncherMotion.closeSettleCurtainAlphaAt(totalMs, fadeStartMs, tailMs), 0.0001f);
+        assertEquals(0f, LauncherMotion.closeSettleCurtainAlphaAt(totalMs + 50f, fadeStartMs, tailMs), 0.0001f);
     }
 }
 

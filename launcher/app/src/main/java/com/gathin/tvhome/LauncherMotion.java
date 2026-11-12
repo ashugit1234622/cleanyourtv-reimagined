@@ -1,10 +1,13 @@
 package com.gathin.tvhome;
 
+import android.animation.TimeInterpolator;
 import android.app.Activity;
 import android.app.Application;
+import android.graphics.Matrix;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
 import android.view.animation.PathInterpolator;
@@ -209,6 +212,65 @@ public final class LauncherMotion {
         return screenToLocalBounds(screenBounds, containerLoc[0], containerLoc[1]);
     }
 
+    /**
+     * Applies one view-hierarchy transform step ({@code scale} around {@code (pivotX, pivotY)},
+     * {@code (tx, ty)}, and parent-relative offset minus parent scroll) to {@code pts} in place.
+     */
+    static void mapBoundsStep(float[] pts, float pivotX, float pivotY,
+                              float scaleX, float scaleY, float tx, float ty,
+                              float left, float top, int scrollX, int scrollY) {
+        if (pts == null || pts.length < 6) return;
+        float sx = Float.isFinite(scaleX) ? scaleX : 1f;
+        float sy = Float.isFinite(scaleY) ? scaleY : 1f;
+        float ox = left - scrollX + tx;
+        float oy = top - scrollY + ty;
+        for (int i = 0; i < 6; i += 2) {
+            pts[i] = pivotX + (pts[i] - pivotX) * sx + ox;
+            pts[i + 1] = pivotY + (pts[i + 1] - pivotY) * sy + oy;
+        }
+    }
+
+    /**
+     * Measures the exact subpixel {@code {cx, cy, width, height}} bounds of {@code target} inside
+     * {@code ancestor} without integer rounding/truncation from {@code int[] getLocationOnScreen}.
+     * Falls back to {@link #screenToLocalBounds(float[], View)} if {@code ancestor} is not in the
+     * parent chain.
+     */
+    public static float[] measureBoundsInAncestor(View target, View ancestor) {
+        if (target == null || ancestor == null || !target.isAttachedToWindow()) return null;
+        int rawW = target.getWidth();
+        int rawH = target.getHeight();
+        if (rawW <= 0 || rawH <= 0) return null;
+
+        float[] pts = new float[] { 0f, 0f, rawW, rawH, rawW * 0.5f, rawH * 0.5f };
+        View current = target;
+        while (current != null && current != ancestor) {
+            Matrix matrix = current.getMatrix();
+            if (!matrix.isIdentity()) {
+                matrix.mapPoints(pts);
+            }
+            ViewParent vp = current.getParent();
+            if (!(vp instanceof View)) break;
+            View parent = (View) vp;
+            float dx = current.getLeft() - parent.getScrollX();
+            float dy = current.getTop() - parent.getScrollY();
+            for (int i = 0; i < pts.length; i += 2) {
+                pts[i] += dx;
+                pts[i + 1] += dy;
+            }
+            current = parent;
+        }
+        if (current == ancestor) {
+            float w = Math.abs(pts[2] - pts[0]);
+            float h = Math.abs(pts[3] - pts[1]);
+            if (Float.isFinite(pts[4]) && Float.isFinite(pts[5])
+                    && Float.isFinite(w) && Float.isFinite(h) && w > 0f && h > 0f) {
+                return new float[] { pts[4], pts[5], w, h };
+            }
+        }
+        return screenToLocalBounds(captureScreenBounds(target), ancestor);
+    }
+
     /** Centered subtle expansion origin when an interactive launch has no attached source view or bounds. */
     public static float[] computeFallbackBounds(int rootW, int rootH) {
         if (rootW <= 0 || rootH <= 0) return null;
@@ -269,6 +331,63 @@ public final class LauncherMotion {
      */
     public static long closeScheduleSettleDelayMs(boolean homeCloseReturn) {
         return homeCloseReturn ? 0L : 240L;
+    }
+
+    /**
+     * Finds the earliest normalized sweep fraction {@code s in [0.86, 1.0]} where remaining eased
+     * close travel {@code 1 - ease(s)} has settled within {@code 0.005f} (~&lt; 3 px even on outer
+     * dock columns), allowing a seamless crossfade into the stationary Home tile without double
+     * images or a static pause at {@code u = 0}.
+     */
+    public static float closeFadeStartFraction(TimeInterpolator ease) {
+        if (ease == null) return 1f;
+        final float minFraction = 0.86f;
+        final float thresholdRemaining = 0.005f;
+        if (1f - ease.getInterpolation(minFraction) <= thresholdRemaining) {
+            return minFraction;
+        }
+        float lo = minFraction;
+        float hi = 1f;
+        for (int i = 0; i < 16; i++) {
+            float mid = 0.5f * (lo + hi);
+            float remaining = 1f - ease.getInterpolation(mid);
+            if (remaining <= thresholdRemaining) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        return hi;
+    }
+
+    /** Start timestamp (ms) for the close settle crossfade relative to {@code sweepMs}. */
+    public static long closeFadeStartMs(long sweepMs, float fadeStartFraction) {
+        long safeSweep = Math.max(0L, sweepMs);
+        float clamped = Math.max(0f, Math.min(1f, fadeStartFraction));
+        return Math.round(safeSweep * clamped);
+    }
+
+    /** Duration (ms) for smoothly dissolving the closing tile artwork into the Home tile. */
+    public static long closeTailDurationMs(long sweepMs) {
+        long safeSweep = Math.max(0L, sweepMs);
+        return Math.max(120L, Math.min(200L, Math.round(safeSweep * 0.32f)));
+    }
+
+    /** Total animator duration (ms) unifying close shrink and continuous end crossfade. */
+    public static long closeTotalDurationMs(long sweepMs, long fadeStartMs, long tailDurationMs) {
+        return Math.max(Math.max(1L, sweepMs), Math.max(0L, fadeStartMs) + Math.max(0L, tailDurationMs));
+    }
+
+    /**
+     * Smoothstepped alpha ({@code 1 -> 0}) dissolving the closing card curtain cleanly into the
+     * settled stationary Home tile with zero derivative discontinuity at either end.
+     */
+    public static float closeSettleCurtainAlphaAt(float elapsedMs, float fadeStartMs, float fadeDurationMs) {
+        if (fadeDurationMs <= 0f) return elapsedMs >= fadeStartMs ? 0f : 1f;
+        if (elapsedMs <= fadeStartMs) return 1f;
+        if (elapsedMs >= fadeStartMs + fadeDurationMs) return 0f;
+        float p = (elapsedMs - fadeStartMs) / fadeDurationMs;
+        return 1f - (p * p * (3f - 2f * p));
     }
 
     /** Identifies screensaver/dream window packages where Home returns must never play close shrink. */
