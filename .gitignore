@@ -24,3 +24,7 @@ launcher/replay_pid*.log
 
 # Reverse-engineering archive & local research
 research/
+# Secrets & Environment variables
+.env
+.env.*
+!.env.example
