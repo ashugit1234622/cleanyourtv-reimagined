@@ -1,9 +1,14 @@
 <p align="center">
-  <a href="https://cleanyour.tv"><img src="https://raw.githubusercontent.com/Gathin23/cleanyourtv/main/docs/banner.png" alt="CleanYourTV. Your TV, minus the ads. Strip the bloatware from any Android TV or Google TV over Wi-Fi and replace the ad-filled home screen with a clean launcher that looks like an Apple TV. No root, no cable, nothing uninstalled, and a one-line restore." width="800"></a>
+  <a href="https://cleanyour.tv"><img src="https://raw.githubusercontent.com/Gathin23/cleanyourtv/main/docs/banner.png" alt="CleanYourTV. Your TV, minus the ads." width="800"></a>
 </p>
 
+> [!NOTE]
+> **CleanYourTV Reimagined** is an enhanced, feature-rich edition of the open-source [CleanYourTV](https://github.com/Gathin23/cleanyourtv) by Gathin.
+> It introduces **iOS-style app open & close animations**, a **tvOS-style Recent Apps menu** (long-press Home) with live per-app RAM tracking and force-stop, **Xiaomi TV Picture/Sound/DTS mode detection & switching**, a **local Phone Bridge web app** (port 8765) with 4K wallpaper management, **boot/wake smart greetings engine**, and a **unified system status pill**.
+
+
 <p align="center">
-  Read in: <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">正體中文</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.ja.md">日本語</a> · <a href="README.it.md">Italiano</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.de.md">Deutsch</a> · <a href="README.uk.md">Українська</a> · <a href="README.tr.md">Türkçe</a>
+  Read in: <a href="docs/translations/README.zh-CN.md">简体中文</a> · <a href="docs/translations/README.zh-TW.md">正體中文</a> · <a href="docs/translations/README.vi.md">Tiếng Việt</a> · <a href="docs/translations/README.ja.md">日本語</a> · <a href="docs/translations/README.it.md">Italiano</a> · <a href="docs/translations/README.pt-BR.md">Português</a> · <a href="docs/translations/README.nl.md">Nederlands</a> · <a href="docs/translations/README.de.md">Deutsch</a> · <a href="docs/translations/README.uk.md">Українська</a> · <a href="docs/translations/README.tr.md">Türkçe</a>
 </p>
 
 <p align="center">
