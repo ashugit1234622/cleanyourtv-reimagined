@@ -309,7 +309,7 @@ public class HomeKeyService extends AccessibilityService {
             }
             return true;
         }
-        if (event.getKeyCode() == 172 || event.getScanCode() == 172 || event.getKeyCode() == KeyEvent.KEYCODE_GUIDE) {
+        if (event.getKeyCode() != KeyEvent.KEYCODE_HOME && (event.getKeyCode() == 172 || event.getKeyCode() == KeyEvent.KEYCODE_GUIDE)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 android.util.Log.d("HomeKeyService", "Key 172 intercepted in accessibility service: toggle playback");
                 MainActivity.toggleMediaPlaybackGlobal(this);

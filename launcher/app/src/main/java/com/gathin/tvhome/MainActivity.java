@@ -2820,12 +2820,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private boolean handleMediaToggleKey(KeyEvent event) {
         int keyCode = event.getKeyCode();
-        if (keyCode == 172 || keyCode == KeyEvent.KEYCODE_GUIDE || event.getScanCode() == 172
+        if (keyCode == KeyEvent.KEYCODE_HOME) {
+            return false;
+        }
+        if (keyCode == 172 || keyCode == KeyEvent.KEYCODE_GUIDE
                 || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
                 || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
                 || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                android.util.Log.d("MainActivity", "Key " + keyCode + " (scan: " + event.getScanCode() + ") pressed: toggle playback");
+                android.util.Log.d("MainActivity", "Key " + keyCode + " pressed: toggle playback");
                 toggleMediaPlaybackGlobal(this);
             }
             return true;
