@@ -141,9 +141,7 @@ public class NowPlayingCardView extends FrameLayout {
         titleText.setTextColor(Color.WHITE);
         titleText.setTextSize(18f);
         titleText.setSingleLine(true);
-        titleText.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-        titleText.setMarqueeRepeatLimit(-1);
-        titleText.setSelected(true);
+        titleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
         titleText.setTypeface(UiFont.get(context, R.string.font_medium));
         textCol.addView(titleText);
 
@@ -217,14 +215,12 @@ public class NowPlayingCardView extends FrameLayout {
         pillEqualizerView.setLayoutParams(pillEqLp);
         pillContainer.addView(pillEqualizerView);
 
-        // Pill single-line title marquee
+        // Pill single-line static title
         pillTitleText = new TextView(context);
         pillTitleText.setTextColor(Color.WHITE);
         pillTitleText.setTextSize(13f);
         pillTitleText.setSingleLine(true);
-        pillTitleText.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-        pillTitleText.setMarqueeRepeatLimit(-1);
-        pillTitleText.setSelected(true);
+        pillTitleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
         pillTitleText.setMaxWidth((int) (220 * density));
         pillTitleText.setTypeface(UiFont.get(context, R.string.font_medium));
         LinearLayout.LayoutParams pillTitleLp = new LinearLayout.LayoutParams(
@@ -308,7 +304,6 @@ public class NowPlayingCardView extends FrameLayout {
 
         // 1. Bind Big Container
         titleText.setText(model.getTitle());
-        titleText.setSelected(true);
         subtitleText.setText(model.getFormattedSubtitle());
 
         if (model.getAppIcon() != null) {
@@ -353,6 +348,5 @@ public class NowPlayingCardView extends FrameLayout {
             pillText = model.getTitle() + " \u2022 " + model.getArtist();
         }
         pillTitleText.setText(pillText);
-        pillTitleText.setSelected(true);
     }
 }
