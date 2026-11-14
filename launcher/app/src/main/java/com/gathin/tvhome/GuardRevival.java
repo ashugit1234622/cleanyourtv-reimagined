@@ -6,13 +6,15 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.UserManager;
 import android.service.notification.NotificationListenerService;
+import android.service.notification.StatusBarNotification;
 
 /**
- * Starts this launcher's process after the firmware has killed it.
+ * Starts this launcher's process after the firmware has killed it and provides notification/media
+ * session access for Now Playing media tracking.
  *
  * A notification listener keeps its approval across a force stop, and the system binds it again
- * once the process is gone. That rebind is what brings Home back on TCL and Xiaomi. No notification
- * is read. Enable with {@code cmd notification allow_listener com.gathin.tvhome/.GuardRevival}.
+ * once the process is gone. That rebind is what brings Home back on TCL and Xiaomi.
+ * Enable with {@code cmd notification allow_listener com.gathin.tvhome/.GuardRevival}.
  */
 public class GuardRevival extends NotificationListenerService {
     private BroadcastReceiver unlocked;
@@ -27,16 +29,31 @@ public class GuardRevival extends NotificationListenerService {
                 public void onReceive(Context context, Intent intent) {
                     stopWaiting();
                     GuardKeep.ensureHomeKey(GuardRevival.this);
+                    NowPlayingController.getInstance().onNotificationListenerConnected(GuardRevival.this);
                 }
             };
             registerReceiver(unlocked, new IntentFilter(Intent.ACTION_USER_UNLOCKED));
             if (users.isUserUnlocked()) {
                 stopWaiting();
                 GuardKeep.ensureHomeKey(this);
+                NowPlayingController.getInstance().onNotificationListenerConnected(this);
             }
             return;
         }
         GuardKeep.ensureHomeKey(this);
+        NowPlayingController.getInstance().onNotificationListenerConnected(this);
+    }
+
+    @Override
+    public void onNotificationPosted(StatusBarNotification sbn) {
+        super.onNotificationPosted(sbn);
+        NowPlayingController.getInstance().onNotificationPosted(sbn);
+    }
+
+    @Override
+    public void onNotificationRemoved(StatusBarNotification sbn) {
+        super.onNotificationRemoved(sbn);
+        NowPlayingController.getInstance().onNotificationRemoved(sbn);
     }
 
     private void stopWaiting() {
@@ -50,6 +67,7 @@ public class GuardRevival extends NotificationListenerService {
 
     @Override
     public void onDestroy() {
+        NowPlayingController.getInstance().onNotificationListenerDisconnected();
         stopWaiting();
         super.onDestroy();
     }

@@ -451,6 +451,15 @@
         android:alpha="0"
         android:importantForAccessibility="no" />
 
+    <!-- Frosted glass Now Playing media card for background playback (SmartTube, Spotify, etc.) -->
+    <com.gathin.tvhome.NowPlayingCardView
+        android:id="@+id/nowPlayingCard"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="56dp"
+        android:visibility="gone" />
+
     <!-- Full-screen iOS-style launch veil: expands locally from the clicked tile (carrying its artwork
          into deep black) before firing startActivity, eliminating cold-start frame stalls on slow CPUs. -->
     <FrameLayout

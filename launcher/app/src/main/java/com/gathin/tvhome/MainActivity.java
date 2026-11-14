@@ -253,6 +253,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView stats;
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
+    private NowPlayingCardView nowPlayingCard;
+    private float lastDockTopInRoot = Float.NaN;
     private TextView raceKicker, raceHeadline, raceSessions;
     /** game_day: each team's next game from an add-on, rotating in the race panel; null when the key is off. */
     private GameDay gameDay;
@@ -716,6 +718,51 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
+        nowPlayingCard = findViewById(R.id.nowPlayingCard);
+        if (nowPlayingCard != null) {
+            NowPlayingController.getInstance().addListener(model -> {
+                runOnUiThread(() -> {
+                    if (nowPlayingCard != null && !isFinishing() && !isDestroyed()) {
+                        nowPlayingCard.bind(model);
+                        nowPlayingCard.post(this::updateNowPlayingPosition);
+                    }
+                });
+            });
+            nowPlayingCard.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        focusTile(Math.min(COLUMNS - 1, Math.max(0, lastFocused)));
+                        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_DOWN);
+                        return true;
+                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                        View top = findViewById(R.id.btnSettings);
+                        if (top == null || top.getVisibility() != View.VISIBLE) {
+                            top = firstTopButton();
+                        }
+                        if (top != null) {
+                            top.requestFocus();
+                            grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                            return true;
+                        }
+                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                        focusTile(0);
+                        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_LEFT);
+                        return true;
+                    }
+                }
+                return false;
+            });
+            nowPlayingCard.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    hideGlass();
+                    hideHero();
+                }
+            });
+            BridgeAdbManager adb = BridgeAdbManager.getInstance(this);
+            if (adb.isConnected()) {
+                adb.executeShell("cmd notification allow_listener com.gathin.tvhome/.GuardRevival");
+            }
+        }
         greeting = findViewById(R.id.greeting);
         weatherInfo = findViewById(R.id.weatherInfo);
         clockBlock = findViewById(R.id.leftBlock);
@@ -1846,6 +1893,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         restartIdleClock();
         if (idleShowcase != null) idleShowcase.onResume();
         checkAndTriggerWakeIntro();
+        NowPlayingController.getInstance().refreshSessions();
         promptsPaused = false;
         if (Config.load(this).restoreKeyServices) ServiceRepair.restore(this);
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
@@ -2887,6 +2935,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 && curtainController.handleDispatchKeyEvent(event, isOkKey(event.getKeyCode()))) {
             return true;
         }
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                    || code == KeyEvent.KEYCODE_MEDIA_PLAY
+                    || code == KeyEvent.KEYCODE_MEDIA_PAUSE) {
+                if (NowPlayingController.getInstance().togglePlayback()) {
+                    return true;
+                }
+            }
+        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.
@@ -3596,6 +3654,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
         View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
         if (card == null || card.getWidth() <= 0 || !card.isFocused()) return;
+        updateNowPlayingPosition();
         float pad = 6f * density;
         float scale = adapter.focusScale();
         int w = (int) (card.getWidth() * scale + 2 * pad);
@@ -3611,12 +3670,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private void updateNowPlayingPosition() {
+        if (nowPlayingCard == null) return;
+        if (hero != null && hero.getY() > 50f) {
+            nowPlayingCard.setY(hero.getY());
+        } else {
+            float fallbackY = root != null && root.getHeight() > 0 ? (root.getHeight() * 0.49f) : (350f * density);
+            nowPlayingCard.setY(fallbackY);
+        }
+    }
+
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
+        if (nowPlayingCard != null) {
+            nowPlayingCard.setY(y);
+        }
         boolean changed = !label.contentEquals(heroName.getText());
         int slideDir = LauncherMotion.heroSlideDirection(lastHeroPosition, position, rtlAppGrid);
         lastHeroPosition = position;
@@ -4148,6 +4220,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && (position % COLUMNS) >= (COLUMNS / 2)) {
+                    nowPlayingCard.requestFocus();
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
                 View top = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton();
                 if (top != null) {
                     top.requestFocus();
@@ -4179,6 +4256,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) {
+                if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && (position % COLUMNS) >= (COLUMNS / 2)) {
+                    nowPlayingCard.requestFocus();
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
                 View top = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton();
                 if (top != null) {
                     top.requestFocus();
