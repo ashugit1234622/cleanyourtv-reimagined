@@ -16,6 +16,7 @@ public class NowPlayingControllerTest {
         assertEquals("YouTube Music", NowPlayingController.resolveFriendlyAppName(null, "com.google.android.youtube.tvmusic"));
         assertEquals("JioHotstar", NowPlayingController.resolveFriendlyAppName(null, "in.startv.hotstar"));
         assertEquals("Netflix", NowPlayingController.resolveFriendlyAppName(null, "com.netflix.ninja"));
+        assertEquals("Bluetooth Audio", NowPlayingController.resolveFriendlyAppName(null, "com.android.bluetooth"));
     }
 
     @Test

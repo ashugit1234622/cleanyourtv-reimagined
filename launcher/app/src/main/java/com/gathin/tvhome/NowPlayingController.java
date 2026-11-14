@@ -396,6 +396,7 @@ public final class NowPlayingController {
         if (pkg.contains("jellyfin")) return "Jellyfin";
         if (pkg.contains("plex")) return "Plex";
         if (pkg.contains("vlc")) return "VLC";
+        if (pkg.contains("bluetooth")) return "Bluetooth Audio";
 
         if (pm != null) {
             try {
