@@ -1,14 +1,10 @@
 package com.gathin.tvhome;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
@@ -21,23 +17,32 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
 /**
- * Frosted glass Now Playing media card matching the iOS/Apple TV dynamic style.
+ * Frosted glass Now Playing media widget matching the iOS/Apple TV dynamic style.
  * Displays album artwork, animated equalizer badge, title, and source app metadata.
- * D-pad focusable; clicking toggles Play/Pause.
+ * Purely ambient and non-interactable (no focus, no touch).
+ * Supports two layout modes:
+ * 1. Big Card Mode: docked on the right side above the app dock when at Home.
+ * 2. Small Pill Mode: docked at the top middle of the screen when the app drawer is open.
  */
 public class NowPlayingCardView extends FrameLayout {
+    // Big Card Container Views
+    private LinearLayout bigContainer;
     private ImageView albumArt;
     private EqualizerView equalizerView;
     private TextView titleText;
     private ImageView appIconView;
     private TextView subtitleText;
-    private FrameLayout artHolder;
 
-    private boolean isFocusedState = false;
-    private ValueAnimator focusAnimator;
+    // Small Pill Container Views
+    private LinearLayout pillContainer;
+    private ImageView pillAlbumArt;
+    private EqualizerView pillEqualizerView;
+    private TextView pillTitleText;
+
+    private boolean isCompact = false;
+    private float density = 1.5f;
 
     public NowPlayingCardView(@NonNull Context context) {
         super(context);
@@ -55,37 +60,40 @@ public class NowPlayingCardView extends FrameLayout {
     }
 
     private void init(Context context) {
-        setFocusable(true);
-        setClickable(true);
-        setBackgroundResource(R.drawable.now_playing_card_bg);
+        density = getResources().getDisplayMetrics().density;
 
-        float density = getResources().getDisplayMetrics().density;
-        final float cornerPx = 22f * density;
+        // Purely ambient display widget: completely non-focusable and non-clickable
+        setFocusable(false);
+        setFocusableInTouchMode(false);
+        setClickable(false);
+        setBackgroundResource(R.drawable.now_playing_card_bg);
 
         setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
+                float cornerPx = isCompact ? (19f * density) : (22f * density);
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerPx);
             }
         });
         setClipToOutline(true);
 
+        // -------------------------------------------------------------
+        // 1. Big Card Container (Dock Mode)
+        // -------------------------------------------------------------
+        bigContainer = new LinearLayout(context);
+        bigContainer.setOrientation(LinearLayout.HORIZONTAL);
+        bigContainer.setGravity(Gravity.CENTER_VERTICAL);
         int padStart = (int) (12 * density);
         int padTop = (int) (10 * density);
         int padEnd = (int) (18 * density);
         int padBottom = (int) (10 * density);
-        setPadding(padStart, padTop, padEnd, padBottom);
+        bigContainer.setPadding(padStart, padTop, padEnd, padBottom);
+        LayoutParams bigLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        addView(bigContainer, bigLp);
 
-        LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        LayoutParams rowLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        rowLp.gravity = Gravity.CENTER_VERTICAL;
-        addView(row, rowLp);
-
-        // 1. Artwork container (64x64dp) with 12dp rounded corners
-        artHolder = new FrameLayout(context);
-        int artSize = (int) (64 * density);
+        // Big Artwork container (60x60dp) with 12dp rounded corners
+        FrameLayout artHolder = new FrameLayout(context);
+        int artSize = (int) (60 * density);
         LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(artSize, artSize);
         artHolder.setLayoutParams(artLp);
         final float artCornerPx = 12f * density;
@@ -118,9 +126,9 @@ public class NowPlayingCardView extends FrameLayout {
         eqBadge.addView(equalizerView);
 
         artHolder.addView(eqBadge);
-        row.addView(artHolder);
+        bigContainer.addView(artHolder);
 
-        // 2. Text layout (Title and Subtitle)
+        // Big Text layout (Title and Subtitle)
         LinearLayout textCol = new LinearLayout(context);
         textCol.setOrientation(LinearLayout.VERTICAL);
         textCol.setGravity(Gravity.CENTER_VERTICAL);
@@ -131,7 +139,7 @@ public class NowPlayingCardView extends FrameLayout {
 
         titleText = new TextView(context);
         titleText.setTextColor(Color.WHITE);
-        titleText.setTextSize(19f);
+        titleText.setTextSize(18f);
         titleText.setSingleLine(true);
         titleText.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
         titleText.setMarqueeRepeatLimit(-1);
@@ -163,55 +171,123 @@ public class NowPlayingCardView extends FrameLayout {
         subRow.addView(subtitleText);
 
         textCol.addView(subRow);
-        row.addView(textCol);
+        bigContainer.addView(textCol);
 
-        // User preference: OK toggles play/pause
-        setOnClickListener(v -> {
-            boolean handled = NowPlayingController.getInstance().togglePlayback();
-            playClickPulse();
-        });
+        // -------------------------------------------------------------
+        // 2. Small Pill Container (App Drawer / Top Center Mode)
+        // -------------------------------------------------------------
+        pillContainer = new LinearLayout(context);
+        pillContainer.setOrientation(LinearLayout.HORIZONTAL);
+        pillContainer.setGravity(Gravity.CENTER_VERTICAL);
+        int pillPadStart = (int) (8 * density);
+        int pillPadTop = (int) (5 * density);
+        int pillPadEnd = (int) (14 * density);
+        int pillPadBottom = (int) (5 * density);
+        pillContainer.setPadding(pillPadStart, pillPadTop, pillPadEnd, pillPadBottom);
+        LayoutParams pillLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        addView(pillContainer, pillLp);
 
-        // Long press opens the app directly
-        setOnLongClickListener(v -> {
-            return NowPlayingController.getInstance().openCurrentApp(getContext());
+        // Pill compact artwork (26x26dp) with 8dp rounded corners
+        FrameLayout pillArtHolder = new FrameLayout(context);
+        int pillArtSize = (int) (26 * density);
+        LinearLayout.LayoutParams pillArtLp = new LinearLayout.LayoutParams(pillArtSize, pillArtSize);
+        pillArtHolder.setLayoutParams(pillArtLp);
+        final float pillArtCornerPx = 8f * density;
+        pillArtHolder.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), pillArtCornerPx);
+            }
         });
+        pillArtHolder.setClipToOutline(true);
+        pillArtHolder.setBackgroundColor(0x33000000);
+
+        pillAlbumArt = new ImageView(context);
+        pillAlbumArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        pillAlbumArt.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        pillArtHolder.addView(pillAlbumArt);
+        pillContainer.addView(pillArtHolder);
+
+        // Pill Equalizer (12x9dp)
+        pillEqualizerView = new EqualizerView(context);
+        LinearLayout.LayoutParams pillEqLp = new LinearLayout.LayoutParams(
+                (int) (12 * density), (int) (9 * density));
+        pillEqLp.setMarginStart((int) (8 * density));
+        pillEqLp.gravity = Gravity.CENTER_VERTICAL;
+        pillEqualizerView.setLayoutParams(pillEqLp);
+        pillContainer.addView(pillEqualizerView);
+
+        // Pill single-line title marquee
+        pillTitleText = new TextView(context);
+        pillTitleText.setTextColor(Color.WHITE);
+        pillTitleText.setTextSize(13f);
+        pillTitleText.setSingleLine(true);
+        pillTitleText.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        pillTitleText.setMarqueeRepeatLimit(-1);
+        pillTitleText.setSelected(true);
+        pillTitleText.setMaxWidth((int) (220 * density));
+        pillTitleText.setTypeface(UiFont.get(context, R.string.font_medium));
+        LinearLayout.LayoutParams pillTitleLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        pillTitleLp.setMarginStart((int) (8 * density));
+        pillTitleText.setLayoutParams(pillTitleLp);
+        pillContainer.addView(pillTitleText);
+
+        // Default: Big container visible, pill container hidden
+        pillContainer.setVisibility(View.GONE);
+        pillContainer.setAlpha(0f);
+        bigContainer.setVisibility(View.VISIBLE);
+        bigContainer.setAlpha(1f);
     }
 
-    private void playClickPulse() {
-        animate().scaleX(0.96f).scaleY(0.96f).setDuration(80).withEndAction(() -> {
-            float targetScale = isFocusedState ? 1.04f : 1.0f;
-            animate().scaleX(targetScale).scaleY(targetScale).setDuration(120).start();
-        }).start();
-    }
+    /**
+     * Switches between Big Card mode (dock/home) and Compact Pill mode (app drawer).
+     */
+    public void setCompactMode(boolean compact, boolean animate) {
+        if (this.isCompact == compact) return;
+        this.isCompact = compact;
+        setBackgroundResource(compact ? R.drawable.now_playing_pill_bg : R.drawable.now_playing_card_bg);
+        invalidateOutline();
 
-    @Override
-    protected void onFocusChanged(boolean gainFocus, int direction, @Nullable android.graphics.Rect previouslyFocusedRect) {
-        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
-        this.isFocusedState = gainFocus;
-
-        if (focusAnimator != null) focusAnimator.cancel();
-
-        float startScale = getScaleX();
-        float endScale = gainFocus ? 1.04f : 1.0f;
-        titleText.setSelected(gainFocus);
-
-        focusAnimator = ValueAnimator.ofFloat(startScale, endScale);
-        focusAnimator.setDuration(180);
-        focusAnimator.setInterpolator(new DecelerateInterpolator(1.4f));
-        focusAnimator.addUpdateListener(anim -> {
-            float s = (float) anim.getAnimatedValue();
-            setScaleX(s);
-            setScaleY(s);
-        });
-        focusAnimator.start();
-
-        if (gainFocus) {
-            setBackgroundResource(R.drawable.now_playing_card_bg_focused);
-            setElevation(getResources().getDisplayMetrics().density * 8f);
+        if (animate) {
+            if (compact) {
+                bigContainer.animate().cancel();
+                pillContainer.animate().cancel();
+                bigContainer.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                    bigContainer.setVisibility(View.GONE);
+                    pillContainer.setVisibility(View.VISIBLE);
+                    pillContainer.setAlpha(0f);
+                    pillContainer.animate().alpha(1f).setDuration(160).start();
+                }).start();
+            } else {
+                bigContainer.animate().cancel();
+                pillContainer.animate().cancel();
+                pillContainer.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                    pillContainer.setVisibility(View.GONE);
+                    bigContainer.setVisibility(View.VISIBLE);
+                    bigContainer.setAlpha(0f);
+                    bigContainer.animate().alpha(1f).setDuration(160).start();
+                }).start();
+            }
         } else {
-            setBackgroundResource(R.drawable.now_playing_card_bg);
-            setElevation(0f);
+            bigContainer.animate().cancel();
+            pillContainer.animate().cancel();
+            if (compact) {
+                bigContainer.setVisibility(View.GONE);
+                bigContainer.setAlpha(0f);
+                pillContainer.setVisibility(View.VISIBLE);
+                pillContainer.setAlpha(1f);
+            } else {
+                pillContainer.setVisibility(View.GONE);
+                pillContainer.setAlpha(0f);
+                bigContainer.setVisibility(View.VISIBLE);
+                bigContainer.setAlpha(1f);
+            }
         }
+    }
+
+    public boolean isCompact() {
+        return isCompact;
     }
 
     public void bind(@Nullable NowPlayingModel model) {
@@ -226,9 +302,11 @@ public class NowPlayingCardView extends FrameLayout {
                         .start();
             }
             equalizerView.setPlaying(false);
+            pillEqualizerView.setPlaying(false);
             return;
         }
 
+        // 1. Bind Big Container
         titleText.setText(model.getTitle());
         titleText.setSelected(true);
         subtitleText.setText(model.getFormattedSubtitle());
@@ -245,28 +323,36 @@ public class NowPlayingCardView extends FrameLayout {
             albumArt.setPadding(0, 0, 0, 0);
             albumArt.setImageBitmap(art);
             albumArt.setBackgroundColor(Color.TRANSPARENT);
+
+            pillAlbumArt.setPadding(0, 0, 0, 0);
+            pillAlbumArt.setImageBitmap(art);
+            pillAlbumArt.setBackgroundColor(Color.TRANSPARENT);
         } else {
             if (model.getAppIcon() != null) {
-                int pad = (int) (14 * getResources().getDisplayMetrics().density);
+                int pad = (int) (14 * density);
                 albumArt.setPadding(pad, pad, pad, pad);
                 albumArt.setImageDrawable(model.getAppIcon());
+
+                int pillPad = (int) (5 * density);
+                pillAlbumArt.setPadding(pillPad, pillPad, pillPad, pillPad);
+                pillAlbumArt.setImageDrawable(model.getAppIcon());
             } else {
                 albumArt.setImageDrawable(null);
+                pillAlbumArt.setImageDrawable(null);
             }
             albumArt.setBackgroundColor(0x33000000);
+            pillAlbumArt.setBackgroundColor(0x33000000);
         }
 
         equalizerView.setPlaying(model.isPlaying());
+        pillEqualizerView.setPlaying(model.isPlaying());
 
-        if (getVisibility() != View.VISIBLE) {
-            setAlpha(0f);
-            setVisibility(View.VISIBLE);
-            animate().cancel();
-            animate()
-                    .alpha(1f)
-                    .setDuration(300)
-                    .setInterpolator(new DecelerateInterpolator(1.4f))
-                    .start();
+        // 2. Bind Small Pill Container
+        String pillText = model.getTitle();
+        if (!model.getArtist().isEmpty()) {
+            pillText = model.getTitle() + " \u2022 " + model.getArtist();
         }
+        pillTitleText.setText(pillText);
+        pillTitleText.setSelected(true);
     }
 }

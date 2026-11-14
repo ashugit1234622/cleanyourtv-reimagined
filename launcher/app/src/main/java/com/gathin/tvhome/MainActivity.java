@@ -254,6 +254,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
     private NowPlayingCardView nowPlayingCard;
+    private boolean isNowPlayingInDrawer = false;
     private float lastDockTopInRoot = Float.NaN;
     private TextView raceKicker, raceHeadline, raceSessions;
     /** game_day: each team's next game from an add-on, rotating in the race panel; null when the key is off. */
@@ -722,41 +723,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (nowPlayingCard != null) {
             NowPlayingController.getInstance().addListener(model -> {
                 runOnUiThread(() -> {
-                    if (nowPlayingCard != null && !isFinishing() && !isDestroyed()) {
-                        nowPlayingCard.bind(model);
-                        nowPlayingCard.post(this::updateNowPlayingPosition);
+                    if (nowPlayingCard == null || isFinishing() || isDestroyed()) return;
+                    if (model == null) {
+                        nowPlayingCard.bind(null);
+                        return;
+                    }
+                    boolean wasGone = nowPlayingCard.getVisibility() != View.VISIBLE;
+                    nowPlayingCard.bind(model);
+                    if (wasGone) {
+                        boolean inDrawer = lastFocused >= COLUMNS;
+                        nowPlayingCard.setAlpha(0f);
+                        nowPlayingCard.setVisibility(View.VISIBLE);
+                        // Position properly before fading in so it never flashes at top near header
+                        nowPlayingCard.post(() -> {
+                            if (nowPlayingCard == null || isFinishing() || isDestroyed()) return;
+                            snapNowPlayingPosition(inDrawer);
+                            nowPlayingCard.animate().alpha(1f).setDuration(280)
+                                    .setInterpolator(new DecelerateInterpolator(1.4f)).start();
+                        });
                     }
                 });
-            });
-            nowPlayingCard.setOnKeyListener((v, keyCode, event) -> {
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                        focusTile(Math.min(COLUMNS - 1, Math.max(0, lastFocused)));
-                        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_DOWN);
-                        return true;
-                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                        View top = findViewById(R.id.btnSettings);
-                        if (top == null || top.getVisibility() != View.VISIBLE) {
-                            top = firstTopButton();
-                        }
-                        if (top != null) {
-                            top.requestFocus();
-                            grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
-                            return true;
-                        }
-                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                        focusTile(0);
-                        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_LEFT);
-                        return true;
-                    }
-                }
-                return false;
-            });
-            nowPlayingCard.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) {
-                    hideGlass();
-                    hideHero();
-                }
             });
             BridgeAdbManager adb = BridgeAdbManager.getInstance(this);
             if (adb.isConnected()) {
@@ -3671,10 +3657,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             showHero(position, scroll ? r.top - dy : r.top);
+            updateNowPlayingDrawerTransition(false, true);
         } else {
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);
+            updateNowPlayingDrawerTransition(true, true);
             // Scroll just enough so the whole glass (not only the tile) is visible.
             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
@@ -3688,7 +3676,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
         View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
         if (card == null || card.getWidth() <= 0 || !card.isFocused()) return;
-        updateNowPlayingPosition();
+        if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && !isNowPlayingInDrawer) {
+            if (hero != null && hero.getY() > 50f) {
+                nowPlayingCard.setTranslationY(hero.getY());
+            }
+        }
         float pad = 6f * density;
         float scale = adapter.focusScale();
         int w = (int) (card.getWidth() * scale + 2 * pad);
@@ -3704,13 +3696,76 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    private void updateNowPlayingPosition() {
+    private void snapNowPlayingPosition(boolean inDrawer) {
         if (nowPlayingCard == null) return;
-        if (hero != null && hero.getY() > 50f) {
-            nowPlayingCard.setY(hero.getY());
+        isNowPlayingInDrawer = inDrawer;
+        nowPlayingCard.setCompactMode(inDrawer, false);
+
+        int rootWidth = root != null && root.getWidth() > 0 ? root.getWidth() : (int) (960 * density);
+        int rootHeight = root != null && root.getHeight() > 0 ? root.getHeight() : (int) (540 * density);
+
+        int cardWidth = nowPlayingCard.getWidth();
+        if (cardWidth <= 0) {
+            cardWidth = (int) ((inDrawer ? 240f : 340f) * density);
+        }
+
+        float targetX;
+        float targetY;
+        if (inDrawer) {
+            targetX = (rootWidth - cardWidth) / 2f;
+            targetY = 24f * density;
         } else {
-            float fallbackY = root != null && root.getHeight() > 0 ? (root.getHeight() * 0.49f) : (350f * density);
-            nowPlayingCard.setY(fallbackY);
+            float marginEnd = 56f * density;
+            targetX = rootWidth - cardWidth - marginEnd;
+            if (hero != null && hero.getY() > 50f) {
+                targetY = hero.getY();
+            } else {
+                targetY = rootHeight * 0.49f;
+            }
+        }
+        nowPlayingCard.animate().cancel();
+        nowPlayingCard.setTranslationX(targetX);
+        nowPlayingCard.setTranslationY(targetY);
+    }
+
+    private void updateNowPlayingDrawerTransition(boolean inDrawer, boolean animate) {
+        if (nowPlayingCard == null || nowPlayingCard.getVisibility() != View.VISIBLE) return;
+        if (isNowPlayingInDrawer == inDrawer) return;
+        isNowPlayingInDrawer = inDrawer;
+
+        nowPlayingCard.setCompactMode(inDrawer, animate);
+
+        int rootWidth = root != null && root.getWidth() > 0 ? root.getWidth() : (int) (960 * density);
+        int rootHeight = root != null && root.getHeight() > 0 ? root.getHeight() : (int) (540 * density);
+
+        int cardWidth = (int) ((inDrawer ? 240f : 340f) * density);
+
+        float targetX;
+        float targetY;
+        if (inDrawer) {
+            targetX = (rootWidth - cardWidth) / 2f;
+            targetY = 24f * density;
+        } else {
+            float marginEnd = 56f * density;
+            targetX = rootWidth - cardWidth - marginEnd;
+            if (hero != null && hero.getY() > 50f) {
+                targetY = hero.getY();
+            } else {
+                targetY = rootHeight * 0.49f;
+            }
+        }
+
+        if (animate && animations && !reducedMotion) {
+            nowPlayingCard.animate()
+                    .translationX(targetX)
+                    .translationY(targetY)
+                    .setDuration(260L)
+                    .setInterpolator(new DecelerateInterpolator(1.4f))
+                    .start();
+        } else {
+            nowPlayingCard.animate().cancel();
+            nowPlayingCard.setTranslationX(targetX);
+            nowPlayingCard.setTranslationY(targetY);
         }
     }
 
@@ -3720,8 +3775,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
-        if (nowPlayingCard != null) {
-            nowPlayingCard.setY(y);
+        if (nowPlayingCard != null && !isNowPlayingInDrawer && nowPlayingCard.getVisibility() == View.VISIBLE) {
+            nowPlayingCard.animate().translationY(y).setDuration(180L)
+                    .setInterpolator(new DecelerateInterpolator(1.4f)).start();
         }
         boolean changed = !label.contentEquals(heroName.getText());
         int slideDir = LauncherMotion.heroSlideDirection(lastHeroPosition, position, rtlAppGrid);
@@ -4254,11 +4310,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && (position % COLUMNS) >= (COLUMNS / 2)) {
-                    nowPlayingCard.requestFocus();
-                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
-                    return true;
-                }
                 View top = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton();
                 if (top != null) {
                     top.requestFocus();
@@ -4290,11 +4341,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) {
-                if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && (position % COLUMNS) >= (COLUMNS / 2)) {
-                    nowPlayingCard.requestFocus();
-                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
-                    return true;
-                }
                 View top = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton();
                 if (top != null) {
                     top.requestFocus();

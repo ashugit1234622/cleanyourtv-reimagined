@@ -456,8 +456,10 @@
         android:id="@+id/nowPlayingCard"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginEnd="56dp"
+        android:layout_gravity="top|start"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:clickable="false"
         android:visibility="gone" />
 
     <!-- Full-screen iOS-style launch veil: expands locally from the clicked tile (carrying its artwork

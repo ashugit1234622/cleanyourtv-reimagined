@@ -226,11 +226,9 @@ public final class NowPlayingController {
 
         PlaybackState state = activeController.getPlaybackState();
         boolean isPlaying = state != null && state.getState() == PlaybackState.STATE_PLAYING;
-        boolean isPaused = state != null && (state.getState() == PlaybackState.STATE_PAUSED
-                || state.getState() == PlaybackState.STATE_BUFFERING);
 
-        // If stopped, state none, or error, don't show card
-        if (!isPlaying && !isPaused) {
+        // User requirement: Only show card when actively playing; disappear when paused or stopped
+        if (!isPlaying) {
             postModelUpdate(null);
             return;
         }
