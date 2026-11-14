@@ -22,12 +22,20 @@ import androidx.annotation.Nullable;
  * Frosted glass Now Playing media widget matching the iOS/Apple TV dynamic style.
  * Displays album artwork, animated equalizer badge, title, and source app metadata.
  * Purely ambient and non-interactable (no focus, no touch).
- * Supports two layout modes:
- * 1. Big Card Mode: docked on the right side above the app dock when at Home.
- * 2. Small Pill Mode: docked at the top middle of the screen when the app drawer is open.
+ *
+ * Supports three layout modes:
+ * 1. Big Card Mode (MODE_DOCK): docked on the right side above the app dock when at Home.
+ * 2. Small Pill Mode (MODE_PILL): docked at the top middle of the screen when the app drawer is open.
+ * 3. Showcase Mode (MODE_SHOWCASE - Option B): center-stage expansive floating glass canvas with
+ *    rich frosted blur backdrop when Idle Wallpaper Showcase is active.
  */
 public class NowPlayingCardView extends FrameLayout {
-    // Big Card Container Views
+
+    public static final int MODE_DOCK = 0;
+    public static final int MODE_PILL = 1;
+    public static final int MODE_SHOWCASE = 2;
+
+    // 1. Big Card Container Views (Dock Mode)
     private LinearLayout bigContainer;
     private ImageView albumArt;
     private EqualizerView equalizerView;
@@ -35,13 +43,22 @@ public class NowPlayingCardView extends FrameLayout {
     private ImageView appIconView;
     private TextView subtitleText;
 
-    // Small Pill Container Views
+    // 2. Small Pill Container Views (App Drawer Mode)
     private LinearLayout pillContainer;
     private ImageView pillAlbumArt;
     private EqualizerView pillEqualizerView;
     private TextView pillTitleText;
 
-    private boolean isCompact = false;
+    // 3. Showcase Container Views (Option B: Center-Stage Wallpaper Showcase)
+    private LinearLayout showcaseContainer;
+    private ImageView showcaseAlbumArt;
+    private TextView showcaseTitleText;
+    private TextView showcaseArtistText;
+    private ImageView showcaseAppIcon;
+    private TextView showcaseAppName;
+    private EqualizerView showcaseEqualizerView;
+
+    private int currentMode = MODE_DOCK;
     private float density = 1.5f;
 
     public NowPlayingCardView(@NonNull Context context) {
@@ -71,7 +88,19 @@ public class NowPlayingCardView extends FrameLayout {
         setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
-                float cornerPx = isCompact ? (19f * density) : (22f * density);
+                float cornerPx;
+                switch (currentMode) {
+                    case MODE_SHOWCASE:
+                        cornerPx = 28f * density;
+                        break;
+                    case MODE_PILL:
+                        cornerPx = 19f * density;
+                        break;
+                    case MODE_DOCK:
+                    default:
+                        cornerPx = 22f * density;
+                        break;
+                }
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerPx);
             }
         });
@@ -229,61 +258,208 @@ public class NowPlayingCardView extends FrameLayout {
         pillTitleText.setLayoutParams(pillTitleLp);
         pillContainer.addView(pillTitleText);
 
-        // Default: Big container visible, pill container hidden
+        // -------------------------------------------------------------
+        // 3. Showcase Container (Option B: Center-Stage Wallpaper Showcase)
+        // -------------------------------------------------------------
+        showcaseContainer = new LinearLayout(context);
+        showcaseContainer.setOrientation(LinearLayout.HORIZONTAL);
+        showcaseContainer.setGravity(Gravity.CENTER_VERTICAL);
+        int scPadStart = (int) (18 * density);
+        int scPadTop = (int) (18 * density);
+        int scPadEnd = (int) (26 * density);
+        int scPadBottom = (int) (18 * density);
+        showcaseContainer.setPadding(scPadStart, scPadTop, scPadEnd, scPadBottom);
+        LayoutParams showcaseLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        addView(showcaseContainer, showcaseLp);
+
+        // Showcase Large Artwork (140x140dp) with 18dp rounded corners
+        FrameLayout scArtHolder = new FrameLayout(context);
+        int scArtSize = (int) (140 * density);
+        LinearLayout.LayoutParams scArtLp = new LinearLayout.LayoutParams(scArtSize, scArtSize);
+        scArtHolder.setLayoutParams(scArtLp);
+        final float scArtCornerPx = 18f * density;
+        scArtHolder.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), scArtCornerPx);
+            }
+        });
+        scArtHolder.setClipToOutline(true);
+        scArtHolder.setBackgroundColor(0x33000000);
+
+        showcaseAlbumArt = new ImageView(context);
+        showcaseAlbumArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        showcaseAlbumArt.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        scArtHolder.addView(showcaseAlbumArt);
+        showcaseContainer.addView(scArtHolder);
+
+        // Showcase Metadata Column
+        LinearLayout scTextCol = new LinearLayout(context);
+        scTextCol.setOrientation(LinearLayout.VERTICAL);
+        scTextCol.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams scTextColLp = new LinearLayout.LayoutParams(
+                (int) (330 * density), LinearLayout.LayoutParams.WRAP_CONTENT);
+        scTextColLp.setMarginStart((int) (22 * density));
+        scTextCol.setLayoutParams(scTextColLp);
+
+        // Showcase Large Title (24sp Semi-Bold)
+        showcaseTitleText = new TextView(context);
+        showcaseTitleText.setTextColor(Color.WHITE);
+        showcaseTitleText.setTextSize(24f);
+        showcaseTitleText.setSingleLine(true);
+        showcaseTitleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        showcaseTitleText.setTypeface(UiFont.get(context, R.string.font_medium));
+        showcaseTitleText.setShadowLayer(5f * density, 0, 1.5f * density, 0xB3000000);
+        scTextCol.addView(showcaseTitleText);
+
+        // Showcase Artist (15sp Regular)
+        showcaseArtistText = new TextView(context);
+        showcaseArtistText.setTextColor(0xE6FFFFFF);
+        showcaseArtistText.setTextSize(15f);
+        showcaseArtistText.setSingleLine(true);
+        showcaseArtistText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        showcaseArtistText.setTypeface(UiFont.get(context, R.string.font_regular));
+        showcaseArtistText.setShadowLayer(4f * density, 0, 1f * density, 0x80000000);
+        LinearLayout.LayoutParams scArtistLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        scArtistLp.setMargins(0, (int) (6 * density), 0, 0);
+        showcaseArtistText.setLayoutParams(scArtistLp);
+        scTextCol.addView(showcaseArtistText);
+
+        // Showcase Bottom Row: App Source Tag + Expanded Live Equalizer
+        LinearLayout scMetaRow = new LinearLayout(context);
+        scMetaRow.setOrientation(LinearLayout.HORIZONTAL);
+        scMetaRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams scMetaRowLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        scMetaRowLp.setMargins(0, (int) (14 * density), 0, 0);
+        scMetaRow.setLayoutParams(scMetaRowLp);
+
+        // Frosted Source Pill Badge
+        LinearLayout sourceTag = new LinearLayout(context);
+        sourceTag.setOrientation(LinearLayout.HORIZONTAL);
+        sourceTag.setGravity(Gravity.CENTER_VERTICAL);
+        sourceTag.setBackgroundResource(R.drawable.now_playing_source_badge_bg);
+        sourceTag.setPadding((int) (10 * density), (int) (4 * density), (int) (12 * density), (int) (4 * density));
+
+        showcaseAppIcon = new ImageView(context);
+        int scIconSize = (int) (16 * density);
+        LinearLayout.LayoutParams scIconLp = new LinearLayout.LayoutParams(scIconSize, scIconSize);
+        scIconLp.setMarginEnd((int) (6 * density));
+        showcaseAppIcon.setLayoutParams(scIconLp);
+        sourceTag.addView(showcaseAppIcon);
+
+        showcaseAppName = new TextView(context);
+        showcaseAppName.setTextColor(0xCCFFFFFF);
+        showcaseAppName.setTextSize(12f);
+        showcaseAppName.setSingleLine(true);
+        showcaseAppName.setTypeface(UiFont.get(context, R.string.font_medium));
+        sourceTag.addView(showcaseAppName);
+        scMetaRow.addView(sourceTag);
+
+        // Expanded Live Equalizer
+        showcaseEqualizerView = new EqualizerView(context);
+        LinearLayout.LayoutParams scEqLp = new LinearLayout.LayoutParams(
+                (int) (22 * density), (int) (15 * density));
+        scEqLp.setMarginStart((int) (16 * density));
+        scEqLp.gravity = Gravity.CENTER_VERTICAL;
+        showcaseEqualizerView.setLayoutParams(scEqLp);
+        scMetaRow.addView(showcaseEqualizerView);
+
+        scTextCol.addView(scMetaRow);
+        showcaseContainer.addView(scTextCol);
+
+        // Default visibility: Big container visible, others hidden
         pillContainer.setVisibility(View.GONE);
         pillContainer.setAlpha(0f);
+        showcaseContainer.setVisibility(View.GONE);
+        showcaseContainer.setAlpha(0f);
         bigContainer.setVisibility(View.VISIBLE);
         bigContainer.setAlpha(1f);
     }
 
+    private View getContainerForMode(int mode) {
+        switch (mode) {
+            case MODE_SHOWCASE:
+                return showcaseContainer;
+            case MODE_PILL:
+                return pillContainer;
+            case MODE_DOCK:
+            default:
+                return bigContainer;
+        }
+    }
+
     /**
-     * Switches between Big Card mode (dock/home) and Compact Pill mode (app drawer).
+     * Switches between Dock Mode, Compact Pill Mode, and Option B Showcase Mode.
      */
-    public void setCompactMode(boolean compact, boolean animate) {
-        if (this.isCompact == compact) return;
-        this.isCompact = compact;
-        setBackgroundResource(compact ? R.drawable.now_playing_pill_bg : R.drawable.now_playing_card_bg);
+    public void setMode(int mode, boolean animate) {
+        if (this.currentMode == mode) return;
+        int previousMode = this.currentMode;
+        this.currentMode = mode;
+
+        int bgRes;
+        switch (mode) {
+            case MODE_SHOWCASE:
+                bgRes = R.drawable.now_playing_showcase_bg;
+                break;
+            case MODE_PILL:
+                bgRes = R.drawable.now_playing_pill_bg;
+                break;
+            case MODE_DOCK:
+            default:
+                bgRes = R.drawable.now_playing_card_bg;
+                break;
+        }
+        setBackgroundResource(bgRes);
         invalidateOutline();
 
+        View outView = getContainerForMode(previousMode);
+        View inView = getContainerForMode(mode);
+
         if (animate) {
-            if (compact) {
-                bigContainer.animate().cancel();
-                pillContainer.animate().cancel();
-                bigContainer.animate().alpha(0f).setDuration(120).withEndAction(() -> {
-                    bigContainer.setVisibility(View.GONE);
-                    pillContainer.setVisibility(View.VISIBLE);
-                    pillContainer.setAlpha(0f);
-                    pillContainer.animate().alpha(1f).setDuration(160).start();
+            if (outView != null) {
+                outView.animate().cancel();
+                outView.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                    outView.setVisibility(View.GONE);
+                    if (inView != null) {
+                        inView.setVisibility(View.VISIBLE);
+                        inView.setAlpha(0f);
+                        inView.animate().alpha(1f).setDuration(160).start();
+                    }
                 }).start();
-            } else {
-                bigContainer.animate().cancel();
-                pillContainer.animate().cancel();
-                pillContainer.animate().alpha(0f).setDuration(120).withEndAction(() -> {
-                    pillContainer.setVisibility(View.GONE);
-                    bigContainer.setVisibility(View.VISIBLE);
-                    bigContainer.setAlpha(0f);
-                    bigContainer.animate().alpha(1f).setDuration(160).start();
-                }).start();
+            } else if (inView != null) {
+                inView.setVisibility(View.VISIBLE);
+                inView.setAlpha(1f);
             }
         } else {
-            bigContainer.animate().cancel();
-            pillContainer.animate().cancel();
-            if (compact) {
-                bigContainer.setVisibility(View.GONE);
-                bigContainer.setAlpha(0f);
-                pillContainer.setVisibility(View.VISIBLE);
-                pillContainer.setAlpha(1f);
-            } else {
-                pillContainer.setVisibility(View.GONE);
-                pillContainer.setAlpha(0f);
-                bigContainer.setVisibility(View.VISIBLE);
-                bigContainer.setAlpha(1f);
+            if (outView != null) {
+                outView.animate().cancel();
+                outView.setVisibility(View.GONE);
+                outView.setAlpha(0f);
+            }
+            if (inView != null) {
+                inView.animate().cancel();
+                inView.setVisibility(View.VISIBLE);
+                inView.setAlpha(1f);
             }
         }
     }
 
+    public void setCompactMode(boolean compact, boolean animate) {
+        setMode(compact ? MODE_PILL : MODE_DOCK, animate);
+    }
+
     public boolean isCompact() {
-        return isCompact;
+        return currentMode == MODE_PILL;
+    }
+
+    public boolean isShowcase() {
+        return currentMode == MODE_SHOWCASE;
+    }
+
+    public int getMode() {
+        return currentMode;
     }
 
     public void bind(@Nullable NowPlayingModel model) {
@@ -299,6 +475,7 @@ public class NowPlayingCardView extends FrameLayout {
             }
             equalizerView.setPlaying(false);
             pillEqualizerView.setPlaying(false);
+            showcaseEqualizerView.setPlaying(false);
             return;
         }
 
@@ -322,6 +499,10 @@ public class NowPlayingCardView extends FrameLayout {
             pillAlbumArt.setPadding(0, 0, 0, 0);
             pillAlbumArt.setImageBitmap(art);
             pillAlbumArt.setBackgroundColor(Color.TRANSPARENT);
+
+            showcaseAlbumArt.setPadding(0, 0, 0, 0);
+            showcaseAlbumArt.setImageBitmap(art);
+            showcaseAlbumArt.setBackgroundColor(Color.TRANSPARENT);
         } else {
             if (model.getAppIcon() != null) {
                 int pad = (int) (14 * density);
@@ -331,16 +512,23 @@ public class NowPlayingCardView extends FrameLayout {
                 int pillPad = (int) (5 * density);
                 pillAlbumArt.setPadding(pillPad, pillPad, pillPad, pillPad);
                 pillAlbumArt.setImageDrawable(model.getAppIcon());
+
+                int scPad = (int) (32 * density);
+                showcaseAlbumArt.setPadding(scPad, scPad, scPad, scPad);
+                showcaseAlbumArt.setImageDrawable(model.getAppIcon());
             } else {
                 albumArt.setImageDrawable(null);
                 pillAlbumArt.setImageDrawable(null);
+                showcaseAlbumArt.setImageDrawable(null);
             }
             albumArt.setBackgroundColor(0x33000000);
             pillAlbumArt.setBackgroundColor(0x33000000);
+            showcaseAlbumArt.setBackgroundColor(0x33000000);
         }
 
         equalizerView.setPlaying(model.isPlaying());
         pillEqualizerView.setPlaying(model.isPlaying());
+        showcaseEqualizerView.setPlaying(model.isPlaying());
 
         // 2. Bind Small Pill Container
         String pillText = model.getTitle();
@@ -348,5 +536,21 @@ public class NowPlayingCardView extends FrameLayout {
             pillText = model.getTitle() + " \u2022 " + model.getArtist();
         }
         pillTitleText.setText(pillText);
+
+        // 3. Bind Showcase Container (Option B)
+        showcaseTitleText.setText(model.getTitle());
+        String artist = model.getArtist();
+        if (artist.isEmpty()) {
+            artist = model.getFormattedSubtitle();
+        }
+        showcaseArtistText.setText(artist);
+        showcaseAppName.setText(model.getAppName());
+
+        if (model.getAppIcon() != null) {
+            showcaseAppIcon.setImageDrawable(model.getAppIcon());
+            showcaseAppIcon.setVisibility(View.VISIBLE);
+        } else {
+            showcaseAppIcon.setVisibility(View.GONE);
+        }
     }
 }

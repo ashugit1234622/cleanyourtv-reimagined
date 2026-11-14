@@ -40,6 +40,8 @@ final class IdleShowcaseController {
         boolean hasAppLibrary();
         boolean hasCardPrompt();
         View getFocusedView();
+        default void onShowcaseEnter() {}
+        default void onShowcaseWake() {}
         void onShowcaseWoke();
     }
 
@@ -261,6 +263,7 @@ final class IdleShowcaseController {
             wallpaperPlayer.setShowcaseActive(false, false);
         }
         if (state != State.NORMAL || morphProgress > 0f) {
+            host.onShowcaseWake();
             applyProgress(0f);
             finishWakeToNormal();
         } else {
@@ -289,6 +292,7 @@ final class IdleShowcaseController {
             animator = null;
         }
         restoreHiddenButtonsForExpansion();
+        host.onShowcaseWake();
 
         long durationMs = animations ? (reducedMotion ? REDUCED_DURATION_MS : WAKE_DURATION_MS) : 0L;
         if (durationMs <= 0L || morphProgress <= 0.001f) {
@@ -344,6 +348,7 @@ final class IdleShowcaseController {
         if (wallpaperPlayer != null) {
             wallpaperPlayer.setShowcaseActive(true, animations && !reducedMotion);
         }
+        host.onShowcaseEnter();
 
         long durationMs = animations ? (reducedMotion ? REDUCED_DURATION_MS : ENTER_DURATION_MS) : 0L;
         if (durationMs <= 0L) {

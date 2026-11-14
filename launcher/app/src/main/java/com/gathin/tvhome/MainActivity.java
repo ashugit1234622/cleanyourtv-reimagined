@@ -254,7 +254,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
     private NowPlayingCardView nowPlayingCard;
+    private View nowPlayingBackdropScrim;
     private boolean isNowPlayingInDrawer = false;
+    private boolean isNowPlayingInShowcase = false;
     private float lastDockTopInRoot = Float.NaN;
     private TextView raceKicker, raceHeadline, raceSessions;
     /** game_day: each team's next game from an add-on, rotating in the race panel; null when the key is off. */
@@ -720,24 +722,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
         nowPlayingCard = findViewById(R.id.nowPlayingCard);
+        nowPlayingBackdropScrim = findViewById(R.id.nowPlayingBackdropScrim);
         if (nowPlayingCard != null) {
             NowPlayingController.getInstance().addListener(model -> {
                 runOnUiThread(() -> {
                     if (nowPlayingCard == null || isFinishing() || isDestroyed()) return;
                     if (model == null) {
                         nowPlayingCard.bind(null);
+                        if (nowPlayingBackdropScrim != null && nowPlayingBackdropScrim.getVisibility() == View.VISIBLE) {
+                            nowPlayingBackdropScrim.animate().cancel();
+                            nowPlayingBackdropScrim.animate().alpha(0f).setDuration(220).withEndAction(() -> {
+                                if (nowPlayingBackdropScrim != null) nowPlayingBackdropScrim.setVisibility(View.GONE);
+                            }).start();
+                        }
                         return;
                     }
                     boolean wasGone = nowPlayingCard.getVisibility() != View.VISIBLE;
                     nowPlayingCard.bind(model);
                     if (wasGone) {
                         boolean inDrawer = lastFocused >= COLUMNS;
+                        boolean inShowcase = idleShowcase != null && idleShowcase.isEngaged();
                         nowPlayingCard.setAlpha(0f);
                         nowPlayingCard.setVisibility(View.VISIBLE);
+                        if (inShowcase && nowPlayingBackdropScrim != null) {
+                            nowPlayingBackdropScrim.animate().cancel();
+                            nowPlayingBackdropScrim.setAlpha(0f);
+                            nowPlayingBackdropScrim.setVisibility(View.VISIBLE);
+                            nowPlayingBackdropScrim.animate().alpha(1f).setDuration(280).start();
+                        }
                         // Position properly before fading in so it never flashes at top near header
                         nowPlayingCard.post(() -> {
                             if (nowPlayingCard == null || isFinishing() || isDestroyed()) return;
-                            snapNowPlayingPosition(inDrawer);
+                            snapNowPlayingPosition(inDrawer, inShowcase);
                             nowPlayingCard.animate().alpha(1f).setDuration(280)
                                     .setInterpolator(new DecelerateInterpolator(1.4f)).start();
                         });
@@ -1228,6 +1244,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     @Override public boolean hasAppLibrary() { return appLibrary != null; }
                     @Override public boolean hasCardPrompt() { return cardPrompt != null; }
                     @Override public View getFocusedView() { return getCurrentFocus(); }
+                    @Override public void onShowcaseEnter() {
+                        updateNowPlayingShowcaseTransition(true, true);
+                    }
+                    @Override public void onShowcaseWake() {
+                        updateNowPlayingShowcaseTransition(false, true);
+                    }
                     @Override public void onShowcaseWoke() {
                         if (resumed) updateWifiLabel();
                     }
@@ -3679,7 +3701,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
         View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
         if (card == null || card.getWidth() <= 0 || !card.isFocused()) return;
-        if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && !isNowPlayingInDrawer) {
+        if (nowPlayingCard != null && nowPlayingCard.getVisibility() == View.VISIBLE && !isNowPlayingInDrawer && !isNowPlayingInShowcase) {
             if (hero != null && hero.getY() > 50f) {
                 nowPlayingCard.setTranslationY(hero.getY());
             }
@@ -3700,24 +3722,34 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void snapNowPlayingPosition(boolean inDrawer) {
+        boolean inShowcase = idleShowcase != null && idleShowcase.isEngaged();
+        snapNowPlayingPosition(inDrawer, inShowcase);
+    }
+
+    private void snapNowPlayingPosition(boolean inDrawer, boolean inShowcase) {
         if (nowPlayingCard == null) return;
         isNowPlayingInDrawer = inDrawer;
-        nowPlayingCard.setCompactMode(inDrawer, false);
+        isNowPlayingInShowcase = inShowcase;
 
         int rootWidth = root != null && root.getWidth() > 0 ? root.getWidth() : (int) (960 * density);
         int rootHeight = root != null && root.getHeight() > 0 ? root.getHeight() : (int) (540 * density);
 
-        int cardWidth = nowPlayingCard.getWidth();
-        if (cardWidth <= 0) {
-            cardWidth = (int) ((inDrawer ? 240f : 340f) * density);
-        }
-
         float targetX;
         float targetY;
-        if (inDrawer) {
+        if (inShowcase) {
+            nowPlayingCard.setMode(NowPlayingCardView.MODE_SHOWCASE, false);
+            int showcaseWidth = (int) (520f * density);
+            int showcaseHeight = (int) (176f * density);
+            targetX = (rootWidth - showcaseWidth) / 2f;
+            targetY = (rootHeight - showcaseHeight) * 0.46f;
+        } else if (inDrawer) {
+            nowPlayingCard.setMode(NowPlayingCardView.MODE_PILL, false);
+            int cardWidth = (int) (240f * density);
             targetX = (rootWidth - cardWidth) / 2f;
             targetY = 24f * density;
         } else {
+            nowPlayingCard.setMode(NowPlayingCardView.MODE_DOCK, false);
+            int cardWidth = (int) (340f * density);
             float marginEnd = 56f * density;
             targetX = rootWidth - cardWidth - marginEnd;
             if (hero != null && hero.getY() > 50f) {
@@ -3732,11 +3764,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void updateNowPlayingDrawerTransition(boolean inDrawer, boolean animate) {
-        if (nowPlayingCard == null || nowPlayingCard.getVisibility() != View.VISIBLE) return;
+        if (nowPlayingCard == null || nowPlayingCard.getVisibility() != View.VISIBLE || isNowPlayingInShowcase) return;
         if (isNowPlayingInDrawer == inDrawer) return;
         isNowPlayingInDrawer = inDrawer;
 
-        nowPlayingCard.setCompactMode(inDrawer, animate);
+        nowPlayingCard.setMode(inDrawer ? NowPlayingCardView.MODE_PILL : NowPlayingCardView.MODE_DOCK, animate);
 
         int rootWidth = root != null && root.getWidth() > 0 ? root.getWidth() : (int) (960 * density);
         int rootHeight = root != null && root.getHeight() > 0 ? root.getHeight() : (int) (540 * density);
@@ -3772,13 +3804,95 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private void updateNowPlayingShowcaseTransition(boolean inShowcase, boolean animate) {
+        if (nowPlayingCard == null || nowPlayingCard.getVisibility() != View.VISIBLE) return;
+        if (isNowPlayingInShowcase == inShowcase) return;
+        isNowPlayingInShowcase = inShowcase;
+
+        int rootWidth = root != null && root.getWidth() > 0 ? root.getWidth() : (int) (960 * density);
+        int rootHeight = root != null && root.getHeight() > 0 ? root.getHeight() : (int) (540 * density);
+
+        float targetX;
+        float targetY;
+        long durationMs = inShowcase ? 480L : 280L;
+
+        if (inShowcase) {
+            nowPlayingCard.setMode(NowPlayingCardView.MODE_SHOWCASE, animate);
+            int showcaseWidth = (int) (520f * density);
+            int showcaseHeight = (int) (176f * density);
+            targetX = (rootWidth - showcaseWidth) / 2f;
+            targetY = (rootHeight - showcaseHeight) * 0.46f;
+
+            if (nowPlayingBackdropScrim != null) {
+                nowPlayingBackdropScrim.animate().cancel();
+                nowPlayingBackdropScrim.setVisibility(View.VISIBLE);
+                if (animate && animations && !reducedMotion) {
+                    nowPlayingBackdropScrim.animate()
+                            .alpha(1f)
+                            .setDuration(durationMs)
+                            .setInterpolator(new DecelerateInterpolator(1.4f))
+                            .start();
+                } else {
+                    nowPlayingBackdropScrim.setAlpha(1f);
+                }
+            }
+        } else {
+            nowPlayingCard.setMode(isNowPlayingInDrawer ? NowPlayingCardView.MODE_PILL : NowPlayingCardView.MODE_DOCK, animate);
+            int cardWidth = (int) ((isNowPlayingInDrawer ? 240f : 340f) * density);
+            if (isNowPlayingInDrawer) {
+                targetX = (rootWidth - cardWidth) / 2f;
+                targetY = 24f * density;
+            } else {
+                float marginEnd = 56f * density;
+                targetX = rootWidth - cardWidth - marginEnd;
+                if (hero != null && hero.getY() > 50f) {
+                    targetY = hero.getY();
+                } else {
+                    targetY = rootHeight * 0.49f;
+                }
+            }
+
+            if (nowPlayingBackdropScrim != null) {
+                nowPlayingBackdropScrim.animate().cancel();
+                if (animate && animations && !reducedMotion) {
+                    nowPlayingBackdropScrim.animate()
+                            .alpha(0f)
+                            .setDuration(durationMs)
+                            .setInterpolator(new DecelerateInterpolator(1.4f))
+                            .withEndAction(() -> {
+                                if (nowPlayingBackdropScrim != null) {
+                                    nowPlayingBackdropScrim.setVisibility(View.GONE);
+                                }
+                            })
+                            .start();
+                } else {
+                    nowPlayingBackdropScrim.setAlpha(0f);
+                    nowPlayingBackdropScrim.setVisibility(View.GONE);
+                }
+            }
+        }
+
+        if (animate && animations && !reducedMotion) {
+            nowPlayingCard.animate()
+                    .translationX(targetX)
+                    .translationY(targetY)
+                    .setDuration(durationMs)
+                    .setInterpolator(new DecelerateInterpolator(1.4f))
+                    .start();
+        } else {
+            nowPlayingCard.animate().cancel();
+            nowPlayingCard.setTranslationX(targetX);
+            nowPlayingCard.setTranslationY(targetY);
+        }
+    }
+
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
-        if (nowPlayingCard != null && !isNowPlayingInDrawer && nowPlayingCard.getVisibility() == View.VISIBLE) {
+        if (nowPlayingCard != null && !isNowPlayingInDrawer && !isNowPlayingInShowcase && nowPlayingCard.getVisibility() == View.VISIBLE) {
             nowPlayingCard.animate().translationY(y).setDuration(180L)
                     .setInterpolator(new DecelerateInterpolator(1.4f)).start();
         }

@@ -451,6 +451,18 @@
         android:alpha="0"
         android:importantForAccessibility="no" />
 
+    <!-- Ambient frosted blur backdrop scrim for Now Playing showcase mode -->
+    <View
+        android:id="@+id/nowPlayingBackdropScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/now_playing_showcase_scrim"
+        android:alpha="0"
+        android:visibility="gone"
+        android:focusable="false"
+        android:clickable="false"
+        android:importantForAccessibility="no" />
+
     <!-- Frosted glass Now Playing media card for background playback (SmartTube, Spotify, etc.) -->
     <com.gathin.tvhome.NowPlayingCardView
         android:id="@+id/nowPlayingCard"
