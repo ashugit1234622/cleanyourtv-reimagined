@@ -424,6 +424,9 @@ public final class NowPlayingController {
      * Toggles play/pause on the active media session.
      */
     public boolean togglePlayback() {
+        if (activeController == null) {
+            refreshSessions();
+        }
         if (activeController == null) return false;
         try {
             PlaybackState state = activeController.getPlaybackState();

@@ -309,6 +309,13 @@ public class HomeKeyService extends AccessibilityService {
             }
             return true;
         }
+        if (event.getKeyCode() == 172 || event.getScanCode() == 172 || event.getKeyCode() == KeyEvent.KEYCODE_GUIDE) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("HomeKeyService", "Key 172 intercepted in accessibility service: toggle playback");
+                MainActivity.toggleMediaPlaybackGlobal(this);
+            }
+            return true;
+        }
         // home_long_press_home: Android never sees the Home key, so a held press cannot turn into ALL_APPS.
         if (homeLongPressHome && event.getKeyCode() == KeyEvent.KEYCODE_HOME) {
             if (RecentsPreferences.isEnabled(this)) {

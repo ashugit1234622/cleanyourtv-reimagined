@@ -2832,6 +2832,47 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
+    private boolean handleMediaToggleKey(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        if (keyCode == 172 || keyCode == KeyEvent.KEYCODE_GUIDE || event.getScanCode() == 172
+                || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
+                || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("MainActivity", "Key " + keyCode + " (scan: " + event.getScanCode() + ") pressed: toggle playback");
+                toggleMediaPlaybackGlobal(this);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public static void toggleMediaPlaybackGlobal(Context context) {
+        if (context == null) return;
+        boolean toggled = NowPlayingController.getInstance().togglePlayback();
+        if (!toggled) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0));
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0));
+                    toggled = true;
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("MainActivity", "Failed to dispatch media key event: " + t.getMessage());
+            }
+        }
+        if (!toggled) {
+            try {
+                BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+                if (adb.isConnected()) {
+                    adb.executeShell("input keyevent 85");
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
     private boolean handleScreensaverKey(KeyEvent event) {
         int keyCode = event.getKeyCode();
         if (keyCode == 194 || keyCode == KeyEvent.KEYCODE_BUTTON_14) {
@@ -2935,15 +2976,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 && curtainController.handleDispatchKeyEvent(event, isOkKey(event.getKeyCode()))) {
             return true;
         }
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            int code = event.getKeyCode();
-            if (code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-                    || code == KeyEvent.KEYCODE_MEDIA_PLAY
-                    || code == KeyEvent.KEYCODE_MEDIA_PAUSE) {
-                if (NowPlayingController.getInstance().togglePlayback()) {
-                    return true;
-                }
-            }
+        if (handleMediaToggleKey(event)) {
+            return true;
         }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN

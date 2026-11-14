@@ -30,3 +30,4 @@ public class NowPlayingControllerTest {
         controller.removeListener(listener);
     }
 }
+
