@@ -309,10 +309,24 @@ public class HomeKeyService extends AccessibilityService {
             }
             return true;
         }
-        if (event.getKeyCode() != KeyEvent.KEYCODE_HOME && (event.getKeyCode() == 172 || event.getKeyCode() == KeyEvent.KEYCODE_GUIDE)) {
+        if (MainActivity.isMediaToggleKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                android.util.Log.d("HomeKeyService", "Key 172 intercepted in accessibility service: toggle playback");
+                android.util.Log.d("HomeKeyService", "Media toggle key intercepted in accessibility service: toggle playback");
                 MainActivity.toggleMediaPlaybackGlobal(this);
+            }
+            return true;
+        }
+        if (MainActivity.isMediaPrevKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("HomeKeyService", "Media prev key intercepted in accessibility service: skip to previous");
+                MainActivity.skipToPreviousMediaGlobal(this);
+            }
+            return true;
+        }
+        if (MainActivity.isMediaNextKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("HomeKeyService", "Media next key intercepted in accessibility service: skip to next");
+                MainActivity.skipToNextMediaGlobal(this);
             }
             return true;
         }

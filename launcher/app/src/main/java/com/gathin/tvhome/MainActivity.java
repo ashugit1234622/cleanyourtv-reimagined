@@ -2840,18 +2840,83 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
-    private boolean handleMediaToggleKey(KeyEvent event) {
+    public static boolean isMediaToggleKey(KeyEvent event) {
+        if (event == null) return false;
         int keyCode = event.getKeyCode();
-        if (keyCode == KeyEvent.KEYCODE_HOME) {
+        if (keyCode == KeyEvent.KEYCODE_HOME || keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             return false;
         }
-        if (keyCode == 172 || keyCode == KeyEvent.KEYCODE_GUIDE
+        int scanCode = event.getScanCode();
+        return keyCode == 12 // KEYCODE_5
+                || keyCode == KeyEvent.KEYCODE_5
+                || keyCode == KeyEvent.KEYCODE_BUTTON_12
                 || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
                 || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
-                || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
+                || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE
+                || scanCode == 12;
+    }
+
+    public static boolean isMediaPrevKey(KeyEvent event) {
+        if (event == null) return false;
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_HOME || keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            return false;
+        }
+        int scanCode = event.getScanCode();
+        return keyCode == KeyEvent.KEYCODE_4 // 11
+                || keyCode == KeyEvent.KEYCODE_BUTTON_4 // 191
+                || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS // 88
+                || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND // 89
+                || keyCode == KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD // 273
+                || keyCode == KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD // 275
+                || (scanCode == 4 && keyCode != KeyEvent.KEYCODE_BACK);
+    }
+
+    public static boolean isMediaNextKey(KeyEvent event) {
+        if (event == null) return false;
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_HOME || keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            return false;
+        }
+        int scanCode = event.getScanCode();
+        return keyCode == KeyEvent.KEYCODE_6 // 13
+                || keyCode == 6 // KEYCODE_ENDCALL
+                || keyCode == KeyEvent.KEYCODE_BUTTON_6 // 193
+                || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT // 87
+                || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD // 90
+                || keyCode == KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD // 272
+                || keyCode == KeyEvent.KEYCODE_MEDIA_STEP_FORWARD // 274
+                || scanCode == 6;
+    }
+
+    private boolean handleMediaKeys(KeyEvent event) {
+        if (isMediaToggleKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                android.util.Log.d("MainActivity", "Key " + keyCode + " pressed: toggle playback");
+                android.util.Log.d("MainActivity", "Key " + event.getKeyCode() + " pressed: toggle playback");
                 toggleMediaPlaybackGlobal(this);
+            }
+            return true;
+        }
+        if (isMediaPrevKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("MainActivity", "Key " + event.getKeyCode() + " pressed: skip to previous track");
+                skipToPreviousMediaGlobal(this);
+            }
+            return true;
+        }
+        if (isMediaNextKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                android.util.Log.d("MainActivity", "Key " + event.getKeyCode() + " pressed: skip to next track");
+                skipToNextMediaGlobal(this);
             }
             return true;
         }
@@ -2879,6 +2944,58 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
                 if (adb.isConnected()) {
                     adb.executeShell("input keyevent 85");
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    public static void skipToPreviousMediaGlobal(Context context) {
+        if (context == null) return;
+        boolean handled = NowPlayingController.getInstance().skipToPrevious();
+        if (!handled) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0));
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0));
+                    handled = true;
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("MainActivity", "Failed to dispatch media prev event: " + t.getMessage());
+            }
+        }
+        if (!handled) {
+            try {
+                BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+                if (adb.isConnected()) {
+                    adb.executeShell("input keyevent 88");
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    public static void skipToNextMediaGlobal(Context context) {
+        if (context == null) return;
+        boolean handled = NowPlayingController.getInstance().skipToNext();
+        if (!handled) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT, 0));
+                    am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT, 0));
+                    handled = true;
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("MainActivity", "Failed to dispatch media next event: " + t.getMessage());
+            }
+        }
+        if (!handled) {
+            try {
+                BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+                if (adb.isConnected()) {
+                    adb.executeShell("input keyevent 87");
                 }
             } catch (Throwable ignored) {}
         }
@@ -2980,14 +3097,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (!revealing) return true;
             return super.dispatchKeyEvent(event);
         }
+        if (handleMediaKeys(event)) {
+            return true;
+        }
         if (idleShowcase != null && idleShowcase.handleDispatchKeyEvent(event)) {
             return true;
         }
         if (curtainController != null
                 && curtainController.handleDispatchKeyEvent(event, isOkKey(event.getKeyCode()))) {
-            return true;
-        }
-        if (handleMediaToggleKey(event)) {
             return true;
         }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their

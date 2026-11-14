@@ -443,6 +443,40 @@ public final class NowPlayingController {
     }
 
     /**
+     * Skips to the next track on the active media session.
+     */
+    public boolean skipToNext() {
+        if (activeController == null) {
+            refreshSessions();
+        }
+        if (activeController == null) return false;
+        try {
+            activeController.getTransportControls().skipToNext();
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to skip to next track: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Skips to the previous track on the active media session.
+     */
+    public boolean skipToPrevious() {
+        if (activeController == null) {
+            refreshSessions();
+        }
+        if (activeController == null) return false;
+        try {
+            activeController.getTransportControls().skipToPrevious();
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to skip to previous track: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Opens the currently playing app.
      */
     public boolean openCurrentApp(Context context) {
