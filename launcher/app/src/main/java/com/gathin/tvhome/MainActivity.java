@@ -360,7 +360,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 suppressNextCloseForWake = true;
                 BootIntro.notifyDreamStarted();
                 prefs.edit().putBoolean(BootIntro.KEY_DREAMING_PERSISTED, true)
-                        .putBoolean(BootIntro.KEY_PENDING_WAKE, true)
+                        .putBoolean(BootIntro.KEY_PENDING_WAKE, false)
                         .putLong(BootIntro.KEY_LAST_STOP_TIME, SystemClock.elapsedRealtime())
                         .commit();
             } else if (Intent.ACTION_SCREEN_ON.equals(action)
@@ -1376,6 +1376,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void checkAndTriggerWakeIntro() {
         if (customIntroPending) return;
         if (bootIntroOverlay != null && bootIntroOverlay.isPlaying()) return;
+        if (isDreaming || BootIntro.isDreaming()) {
+            android.util.Log.d("BootIntro", "wake intro suppressed: device is currently dreaming");
+            return;
+        }
 
         long now = SystemClock.elapsedRealtime();
         if (lastIntroTriggerTime > 0 && now - lastIntroTriggerTime < 3000L) {
@@ -3006,6 +3010,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (keyCode == 194 || keyCode == KeyEvent.KEYCODE_BUTTON_14) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 android.util.Log.d("MainActivity", "Key 194 pressed: triggering Aerial Views screensaver");
+                isDreaming = true;
+                BootIntro.notifyDreamStarted();
                 startScreensaver(this);
             }
             return true;
@@ -3015,6 +3021,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     public static void startScreensaver(Context context) {
         if (context == null) return;
+        BootIntro.notifyDreamStarted();
         new Thread(() -> {
             boolean started = false;
             // 1. Try real system dream via loopback ADB (shell UID 2000 has WRITE_DREAM_STATE)

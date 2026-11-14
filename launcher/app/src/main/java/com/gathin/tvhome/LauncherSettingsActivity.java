@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.gathin.tvhome.bridge.BridgeAdbManager;
+
 /** Remote-friendly settings owned by the launcher; system settings stay one row away. */
 public final class LauncherSettingsActivity extends Activity {
     @Override
@@ -40,6 +42,8 @@ public final class LauncherSettingsActivity extends Activity {
     private final TextView[] clockChoices = new TextView[CLOCK_FORMATS.length];
     private static final int[] SHOWCASE_SECONDS = {0, 30, 60, 120};
     private final TextView[] showcaseChoices = new TextView[SHOWCASE_SECONDS.length];
+    private static final int[] SCREENSAVER_TIMEOUT_MS = {300000, 600000, 1200000, 1800000, 3600000};
+    private final TextView[] screensaverChoices = new TextView[SCREENSAVER_TIMEOUT_MS.length];
     private TextView wallpaperChoice;
     private TextView wallpaperRotationChoice;
     private TextView animationsChoice;
@@ -53,6 +57,7 @@ public final class LauncherSettingsActivity extends Activity {
     private int rowsBelowDock;
     private int dockOpacity;
     private int idleShowcaseSeconds;
+    private int screensaverTimeoutMs;
     private String clockFormat;
     private boolean animations;
     private boolean advancedEffects;
@@ -140,6 +145,20 @@ public final class LauncherSettingsActivity extends Activity {
                 refresh();
             });
         }
+        screensaverTimeoutMs = getScreensaverTimeout(this);
+        int[] screensaverIds = {R.id.screensaver5m, R.id.screensaver10m, R.id.screensaver20m, R.id.screensaver30m, R.id.screensaver1h};
+        for (int i = 0; i < screensaverIds.length; i++) {
+            final int value = SCREENSAVER_TIMEOUT_MS[i];
+            screensaverChoices[i] = findViewById(screensaverIds[i]);
+            screensaverChoices[i].setOnClickListener(v -> {
+                if (screensaverTimeoutMs == value) return;
+                screensaverTimeoutMs = value;
+                choices.edit().putInt("screensaver_timeout_ms", value).apply();
+                setScreensaverTimeout(this, value);
+                changed();
+                refresh();
+            });
+        }
         // Mirror text alignment without globally opting the launcher into RTL. Numeric rows
         // still need explicit ordering in Android's no-supportsRtl compatibility mode.
         if (getResources().getBoolean(R.bool.rtl_menu_bar))
@@ -150,6 +169,7 @@ public final class LauncherSettingsActivity extends Activity {
             reverseRow(dockChoices);
             reverseRow(clockChoices);
             reverseRow(showcaseChoices);
+            reverseRow(screensaverChoices);
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
@@ -249,7 +269,8 @@ public final class LauncherSettingsActivity extends Activity {
                     .remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
                     .remove(Config.WALLPAPER_ROTATION_KEY).remove(Config.IDLE_SHOWCASE_KEY)
-                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY);
+                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY)
+                    .remove("screensaver_timeout_ms");
             AppLaunchSettings.clearKeys(resetEditor);
             RecentsPreferences.clearChoice(resetEditor);
             resetEditor.commit();
@@ -259,6 +280,8 @@ public final class LauncherSettingsActivity extends Activity {
             rowsBelowDock = current.rowsBelowDock;
             dockOpacity = current.dockOpacity;
             idleShowcaseSeconds = current.idleShowcaseSeconds;
+            screensaverTimeoutMs = 600000;
+            setScreensaverTimeout(this, 600000);
             clockFormat = current.clockFormat;
             animations = current.animations;
             advancedEffects = current.animations && current.advancedEffects;
@@ -434,6 +457,9 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = 0; i < showcaseChoices.length; i++) {
             showcaseChoices[i].setSelected(idleShowcaseSeconds == SHOWCASE_SECONDS[i]);
         }
+        for (int i = 0; i < screensaverChoices.length; i++) {
+            screensaverChoices[i].setSelected(screensaverTimeoutMs == SCREENSAVER_TIMEOUT_MS[i]);
+        }
         animationsChoice.setText(getString(R.string.animations_state,
                 getString(animations ? R.string.on : R.string.off)));
         advancedChoice.setText(getString(R.string.advanced_effects_state,
@@ -466,11 +492,45 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.WALLPAPER_ROTATION_KEY)
                 || choices.contains(Config.IDLE_SHOWCASE_KEY)
+                || choices.contains("screensaver_timeout_ms")
                 || choices.contains(Config.DOCK_OPACITY_KEY) || choices.contains(Config.CLOCK_FORMAT_KEY)
                 || choices.contains(OpenOnStart.KEY)
                 || AppLaunchSettings.hasCustomChoices(choices)
                 || RecentsPreferences.hasCustomChoice(choices)
                 || !getSharedPreferences(IntroSettings.PREFS_NAME, MODE_PRIVATE).getAll().isEmpty();
+    }
+
+    public static int getScreensaverTimeout(android.content.Context context) {
+        if (context == null) return 600000;
+        try {
+            int val = Settings.System.getInt(context.getContentResolver(), Settings.System.SCREEN_OFF_TIMEOUT, 600000);
+            return val > 0 ? val : 600000;
+        } catch (Throwable t) {
+            return 600000;
+        }
+    }
+
+    public static void setScreensaverTimeout(android.content.Context context, int ms) {
+        if (context == null) return;
+        new Thread(() -> {
+            try {
+                Settings.System.putInt(context.getContentResolver(), Settings.System.SCREEN_OFF_TIMEOUT, ms);
+            } catch (Throwable ignored) {}
+
+            try {
+                BridgeAdbManager adb = BridgeAdbManager.getInstance(context);
+                if (adb.isConnected()) {
+                    adb.executeShell("settings put system screen_off_timeout " + ms);
+                    long sleepTimeout = Math.max(1200000L, (long) ms + 600000L);
+                    adb.executeShell("settings put secure sleep_timeout " + sleepTimeout);
+                }
+            } catch (Throwable ignored) {}
+
+            try {
+                Process p = Runtime.getRuntime().exec(new String[]{"settings", "put", "system", "screen_off_timeout", String.valueOf(ms)});
+                p.waitFor();
+            } catch (Throwable ignored) {}
+        }).start();
     }
 
     private void toggleRecentAppsHome() {

@@ -61,6 +61,12 @@
     <string name="idle_showcase_30s">30s</string>
     <string name="idle_showcase_1m">1m</string>
     <string name="idle_showcase_2m">2m</string>
+    <string name="screensaver_timeout_label">Screensaver timeout</string>
+    <string name="screensaver_5m">5 min</string>
+    <string name="screensaver_10m">10 min</string>
+    <string name="screensaver_20m">20 min</string>
+    <string name="screensaver_30m">30 min</string>
+    <string name="screensaver_1h">1 hr</string>
     <string name="wallpaper_none">None</string>
     <string name="wallpaper_applied">Wallpaper changed</string>
     <string name="wallpaper_theme_default">Theme default</string>
